@@ -25,7 +25,7 @@ P0 与 M1 已交付，M2–M4 已实现主要路径：多步骤/队列/上下文
 pnpm install --frozen-lockfile   # 之后先跑 pnpm run doctor 核对环境
 pnpm run doctor                  # Node/pnpm/rustup/组件/Xcode 自检
 pnpm check                       # docs → traceability → references → repo → rust → contracts → boundaries → typecheck
-pnpm build                       # 递归 UI 构建
+pnpm build                       # UI 构建；原生 App 单独使用 pnpm tauri build
 pnpm test:ui                     # vitest + Playwright（基线更新用 pnpm test:ui:update）
 pnpm test:desktop                # 原生测试构建 + embedded WebDriver，证据在 tests/.artifacts/desktop/（.gitignore 忽略，运行即重生成）
 FLEQI_ONLY=run-ui pnpm test:desktop   # 只跑一组；tag 见 scripts/test-desktop.mjs 的 runs 表

@@ -21,7 +21,7 @@
     "check:boundaries": "node scripts/check-boundaries.mjs",
     "contracts:regen": "node scripts/regen-contracts.mjs",
     "typecheck": "pnpm -r run typecheck",
-    "build": "pnpm -r run build",
+    "build": "pnpm --filter @fleqi/ui run build",
     "dev:ui": "pnpm --filter @fleqi/ui run dev",
     "test:ui": "pnpm --filter @fleqi/ui run test",
     "test:ui:update": "pnpm --filter @fleqi/ui run test:e2e:update",
