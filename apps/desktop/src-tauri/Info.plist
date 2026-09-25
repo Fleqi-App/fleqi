@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>LSUIElement</key>
+  <false/>
+  <key>NSAppleEventsUsageDescription</key>
+  <string>Fleqi 读取当前 Finder 文件夹与选中项，用于把命令定位到你正在查看的位置。</string>
+</dict>
+</plist>

@@ -1,0 +1,110 @@
+/* Official shadcn components share Fleqi's existing appearance settings. */
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+@theme inline {
+  --color-primary-foreground: var(--fleqi-background);
+  --color-secondary: var(--fleqi-accent-surface);
+  --color-secondary-foreground: var(--fleqi-foreground);
+  --color-accent: var(--fleqi-accent-surface);
+  --color-accent-foreground: var(--fleqi-foreground);
+  --color-card-foreground: var(--fleqi-foreground);
+  --color-popover: var(--fleqi-card);
+  --color-popover-foreground: var(--fleqi-foreground);
+  --color-ring: var(--fleqi-navigation-icon);
+  --color-destructive: var(--fleqi-error);
+  --color-sidebar-foreground: var(--fleqi-foreground);
+  --color-sidebar-primary: var(--fleqi-foreground);
+  --color-sidebar-primary-foreground: var(--fleqi-background);
+  --color-sidebar-accent: var(--fleqi-accent-surface);
+  --color-sidebar-accent-foreground: var(--fleqi-foreground);
+  --color-sidebar-border: var(--fleqi-border);
+  --color-sidebar-ring: var(--fleqi-navigation-icon);
+}
+.app-shell { background: var(--fleqi-sidebar); }
+.app-sidebar [data-slot="sidebar-inner"] { background: var(--fleqi-sidebar); }
+.app-sidebar [data-slot="sidebar-menu-button"][data-active="true"] { font-weight: 500; }
+.app-content h2 { letter-spacing: -0.025em; }
+.overview-board { display: grid; grid-template-rows: minmax(0, 1fr) auto 32px; gap: 16px; height: 100%; min-height: 0; }
+@media (max-width: 799px) {
+  .overview-capability-grid { gap: 8px; }
+  .overview-capability { padding: 10px; font-size: 12px; }
+  .overview-status { padding: 12px; }
+  .overview-footer { gap: 8px; }
+}
+@media (max-height: 640px) {
+  .app-content[data-fixed-board="true"] { padding-block: 12px; }
+  .overview-board { gap: 10px; }
+  .overview-capabilities { gap: 8px; }
+  .overview-capabilities h3 { font-size: 16px; line-height: 22px; }
+  .overview-capabilities > div:first-child > p { display: none; }
+  .overview-status { padding: 10px; }
+  .overview-capability { padding: 10px; gap: 0; }
+  .overview-capability > div { margin-top: 0; }
+  .overview-capability > div:first-child { display: none; }
+}
+.app-content input:not([type="checkbox"]), .app-content select, .app-content textarea { font-size: 13px; }
+.page-transition { animation: page-enter var(--fleqi-motion-layout) var(--fleqi-ease) both; }
+@keyframes page-enter { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+.composer-panel, .composer-feedback {
+  opacity: 0;
+  transform-origin: var(--fleqi-panel-origin);
+  transform: translateY(6px) scale(var(--fleqi-panel-enter-scale));
+  transition: opacity var(--fleqi-motion-menu) var(--fleqi-ease), transform var(--fleqi-motion-menu) var(--fleqi-ease);
+}
+.composer-feedback { --fleqi-panel-enter-scale: .985; transform-origin: left bottom; }
+[data-testid="task-panel"] { --fleqi-panel-origin: right bottom; --fleqi-panel-enter-scale: .97; }
+[data-testid="composer"][data-planning="true"] [data-testid="composer-input"] { border-color: var(--fleqi-error); background: color-mix(in srgb, var(--fleqi-error) 9%, var(--fleqi-card)); }
+[data-testid="composer"][data-planning="true"] [data-testid="composer-input"]:focus-visible { outline-color: var(--fleqi-error); --tw-ring-color: color-mix(in srgb, var(--fleqi-error) 35%, transparent); }
+[data-testid="composer"][data-planning="true"] [data-testid="composer-submit"] { color: var(--fleqi-error); background: color-mix(in srgb, var(--fleqi-error) 12%, var(--fleqi-card)); }
+[data-panel-presence="visible"] .composer-panel, [data-feedback-presence="visible"] .composer-feedback { opacity: 1; transform: none; }
+[data-panel-presence="closing"] .composer-panel, [data-feedback-presence="closing"] .composer-feedback {
+  pointer-events: none;
+  opacity: 0;
+  transform: translateY(5px) scale(.985);
+  transition-duration: var(--fleqi-motion-feedback);
+}
+@keyframes panel-enter { from { opacity: 0; transform: translateY(7px) scale(var(--fleqi-panel-enter-scale)); } to { opacity: 1; transform: none; } }
+.composer-notice { animation: panel-enter var(--fleqi-motion-feedback) var(--fleqi-ease) both; }
+:root[data-platform="macos"][data-material="glass"][data-transparency="on"] .app-shell,
+:root[data-platform="macos"][data-material="vibrancy"][data-transparency="on"] .app-shell { background: transparent; }
+:root[data-platform="macos"][data-material="glass"][data-transparency="on"] .app-sidebar [data-slot="sidebar-inner"],
+:root[data-platform="macos"][data-material="vibrancy"][data-transparency="on"] .app-sidebar [data-slot="sidebar-inner"] { background: color-mix(in srgb, var(--fleqi-sidebar) 30%, transparent); }
+:root[data-platform="macos"][data-material="glass"][data-transparency="on"] [data-testid="composer"],
+:root[data-platform="macos"][data-material="vibrancy"][data-transparency="on"] [data-testid="composer"] { background: color-mix(in srgb, var(--fleqi-card) 18%, transparent); }
+
+/* A terminal has its own dark palette even when the surrounding app is light.
+   Its text, selection and ANSI palette must not inherit management-page colors. */
+.terminal-panel {
+  --fleqi-panel-enter-scale: .985;
+  --fleqi-panel-origin: center bottom;
+  --fleqi-foreground: #f3f4f6;
+  --fleqi-muted-foreground: #b4b8c2;
+  --fleqi-success: #90dfa5;
+  --fleqi-warning: #f5d68a;
+  --fleqi-error: #ff8d8d;
+  --fleqi-border: #3b3d42;
+  --fleqi-accent-surface: #35373d;
+  color-scheme: dark;
+  color: #f3f4f6;
+  background: #18191b;
+  border-color: #3b3d42;
+  isolation: isolate;
+}
+.terminal-titlebar { background: #232529; border-color: #3b3d42; }
+.terminal-output, .terminal-output .xterm { color: #f3f4f6; background: #18191b; }
+.terminal-output .xterm { height: 100%; }
+.terminal-output .xterm-viewport { background-color: #18191b; }
+.terminal-output .xterm:focus-visible { outline: none; }
+.terminal-inset { contain: paint; }
+@media (max-width: 799px) {
+  .app-content { padding: 20px; }
+  .app-toolbar { gap: 8px; padding-inline: 12px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0ms !important; transition-duration: 0ms !important; scroll-behavior: auto !important; }
+}
+:root[data-motion="reduce"] *, :root[data-motion="reduce"] *::before, :root[data-motion="reduce"] *::after { animation-duration: 0ms !important; transition-duration: 0ms !important; scroll-behavior: auto !important; }
+
+.submission-echo { animation: submission-echo var(--fleqi-motion-submit) var(--fleqi-ease) both; }
+@keyframes submission-echo { from { opacity: .7; transform: none; } to { opacity: 0; transform: translateY(-6px); } }
+
+.app-sidebar [data-slot="sidebar-container"], [data-slot="sidebar-gap"] { transition-duration: var(--fleqi-motion-menu); transition-timing-function: var(--fleqi-ease); }

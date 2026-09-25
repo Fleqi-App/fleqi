@@ -1,0 +1,30 @@
+[workspace]
+resolver = "2"
+members = [
+  "crates/fleqi-domain",
+  "crates/fleqi-application",
+  "crates/fleqi-adapters",
+  "crates/fleqi-platform",
+  "apps/desktop/src-tauri",
+]
+
+[workspace.package]
+version = "0.0.2"
+edition = "2024"
+license = "AGPL-3.0-only"
+repository = "https://github.com/Fleqi-App/fleqi"
+rust-version = "1.98.0"
+
+[workspace.dependencies]
+fleqi-domain = { path = "crates/fleqi-domain", version = "0.0.2" }
+fleqi-application = { path = "crates/fleqi-application", version = "0.0.2" }
+fleqi-adapters = { path = "crates/fleqi-adapters", version = "0.0.2" }
+fleqi-platform = { path = "crates/fleqi-platform", version = "0.0.2" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+ts-rs = { version = "12.0.1", features = ["serde-json-impl"] }
+
+[profile.release]
+# macOS 27 工具链下精简符号会破坏 proc-macro 的 LINKEDIT；M5 工具链矩阵验证前保持不剥离。
+strip = "none"

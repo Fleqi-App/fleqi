@@ -1,0 +1,16 @@
+{
+  "name": "fleqi-desktop",
+  "version": "0.0.2",
+  "private": true,
+  "type": "module",
+  "description": "Fleqi Tauri 桌面宿主（apps/desktop）。P0：只读 app_build_info IPC、单个工程状态窗口，关窗即退出。",
+  "scripts": {
+    "tauri": "tauri",
+    "dev": "tauri dev",
+    "build": "tauri build",
+    "build:test": "tauri build --debug --no-bundle --features desktop-test --config src-tauri/tauri.test.conf.json"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "2.11.4"
+  }
+}

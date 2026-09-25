@@ -1,0 +1,24 @@
+import { $, browser, expect } from "@wdio/globals";
+import { evidencePath, writeEvidence } from "../lib/evidence";
+
+// 本 spec 由 scripts/test-desktop.mjs 作为第二次 wdio 运行执行：新的宿主进程读取同一数据目录，
+// 验证重启后从 SQLite 恢复设置，不重跑任何旧动作。
+describe("M1.6 · 重启恢复", () => {
+  it("新进程加载后设置版本与外观值来自持久化记录", async () => {
+    await $("[data-phase='ready']").waitForExist({ timeout: 30_000 });
+    await browser.waitUntil(async () => (await $("[data-testid='host-state']").getAttribute("data-host-state")) === "ready", { timeout: 20_000 });
+    expect(await $("[data-field='settings-revision']").getText()).toBe("3");
+    expect(await $("html").getAttribute("data-theme")).toBe("light");
+    expect(await $("html").getAttribute("data-transparency")).toBe("off");
+    expect(await $("html").getAttribute("data-motion")).toBe("reduce");
+    await browser.saveScreenshot(evidencePath("m1-console-after-restart.png"));
+    writeEvidence("m1-restart-evidence.json", {
+      capturedAt: new Date().toISOString(),
+      settingsRevision: "3",
+      theme: "light",
+      transparency: false,
+      motionMode: "reduce",
+      note: "第二个宿主进程读取同一测试数据目录；未重跑任何设置更新。",
+    });
+  });
+});

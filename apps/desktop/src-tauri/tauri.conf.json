@@ -1,0 +1,54 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Fleqi",
+  "version": "0.0.2",
+  "identifier": "app.fleqi.desktop",
+  "build": {
+    "beforeDevCommand": "pnpm --filter @fleqi/ui run dev",
+    "devUrl": "http://127.0.0.1:1420",
+    "beforeBuildCommand": "pnpm --filter @fleqi/ui run build",
+    "frontendDist": "../../../packages/ui/dist"
+  },
+  "app": {
+    "withGlobalTauri": false,
+    "macOSPrivateApi": true,
+    "windows": [],
+    "security": {
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src ipc: http://ipc.localhost; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+      "capabilities": [
+        "bootstrap"
+      ],
+      "assetProtocol": {
+        "enable": false
+      }
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": [
+      "app"
+    ],
+    "category": "Utility",
+    "copyright": "Copyright © 2026 Fleqi contributors. AGPL-3.0-only.",
+    "icon": [
+      "../../../resources/icons/32x32.png",
+      "../../../resources/icons/128x128.png",
+      "../../../resources/icons/128x128@2x.png",
+      "../../../resources/icons/icon.icns",
+      "../../../resources/icons/icon.ico"
+    ],
+    "macOS": {
+      "minimumSystemVersion": "14.0",
+      "signingIdentity": "-",
+      "entitlements": "entitlements.plist"
+    }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDNCRDA3NkVBNzk5RkM1QzMKUldURHhaOTU2bmJRT3k1RkF2aXgvS1o1aHFsdEtFdFl3WUMzL2cveGlyZXh4LzZNalJ6TXRaMGUK",
+      "endpoints": [
+        "https://github.com/Fleqi-App/fleqi/releases/download/update-channel/latest.json"
+      ]
+    }
+  }
+}

@@ -1,0 +1,105 @@
+{
+  "status": "analysis-only; tempo candidates are not validated beat grid",
+  "tempoCandidates": [
+    {
+      "bpmCandidate": 107.67,
+      "autocorrelation": 0.751
+    },
+    {
+      "bpmCandidate": 71.78,
+      "autocorrelation": 0.719
+    },
+    {
+      "bpmCandidate": 143.55,
+      "autocorrelation": 0.465
+    },
+    {
+      "bpmCandidate": 86.13,
+      "autocorrelation": 0.44
+    },
+    {
+      "bpmCandidate": 61.52,
+      "autocorrelation": 0.438
+    }
+  ],
+  "energy5s": [
+    {
+      "start": 0,
+      "rmsDbfs": -18.2
+    },
+    {
+      "start": 5,
+      "rmsDbfs": -12.5
+    },
+    {
+      "start": 10,
+      "rmsDbfs": -8.6
+    },
+    {
+      "start": 15,
+      "rmsDbfs": -8.7
+    },
+    {
+      "start": 20,
+      "rmsDbfs": -8.8
+    },
+    {
+      "start": 25,
+      "rmsDbfs": -8.8
+    },
+    {
+      "start": 30,
+      "rmsDbfs": -8.7
+    },
+    {
+      "start": 35,
+      "rmsDbfs": -8.5
+    },
+    {
+      "start": 40,
+      "rmsDbfs": -8.5
+    },
+    {
+      "start": 45,
+      "rmsDbfs": -8.7
+    },
+    {
+      "start": 50,
+      "rmsDbfs": -8.6
+    },
+    {
+      "start": 55,
+      "rmsDbfs": -8.5
+    },
+    {
+      "start": 60,
+      "rmsDbfs": -8.7
+    },
+    {
+      "start": 65,
+      "rmsDbfs": -8.8
+    },
+    {
+      "start": 70,
+      "rmsDbfs": -8.6
+    },
+    {
+      "start": 75,
+      "rmsDbfs": -8.6
+    },
+    {
+      "start": 80,
+      "rmsDbfs": -8.7
+    },
+    {
+      "start": 85,
+      "rmsDbfs": -8.8
+    },
+    {
+      "start": 90,
+      "rmsDbfs": -10.8
+    }
+  ],
+  "integratedLUFS": -9.9,
+  "truePeakDbTP": 2.0
+}

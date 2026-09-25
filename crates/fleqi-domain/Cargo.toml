@@ -1,0 +1,16 @@
+[package]
+name = "fleqi-domain"
+description = "Fleqi 领域模型：实体、值对象、状态转换与执行策略（不依赖 Tauri/HTTP/SQLite/React）"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+serde = { workspace = true }
+thiserror = { workspace = true }
+ts-rs = { workspace = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }

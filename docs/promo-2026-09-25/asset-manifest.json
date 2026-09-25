@@ -1,0 +1,40 @@
+{
+  "date": "2026-09-25",
+  "mode": "reference-led planning only; user review before recording or rendering",
+  "languages": [
+    "zh-CN",
+    "en"
+  ],
+  "repoHead": "ce2da3994c2f74464ad3d8d9722367f6fa72da36",
+  "workingTree": "contains pre-existing uncommitted changes; business files not edited by this plan",
+  "assets": [
+    {
+      "file": "assets/reference.mp4",
+      "source": "/Users/trip/Downloads/39791035415-1-16.MP4",
+      "bytes": 2210142,
+      "sha256": "cd4daf5fc5b83c42445cab62051e5bdd13a2966dfa5bd6d885f86f24084181b1",
+      "purpose": "参考片，仅用于拆解与审阅；不是 Fleqi 成片"
+    },
+    {
+      "file": "assets/provided-console.png",
+      "source": "/var/folders/lf/zll5whg118q4yd9jnq61mxgm0000gn/T/TemporaryItems/NSIRD_screencaptureui_0Ua4Vg/截屏2026-09-25 上午10.33.51.png",
+      "bytes": 397861,
+      "sha256": "2f65480f6eebbc074ad6c7da2f5f54c806401ff421ec7914b5b8c5844f32f90a",
+      "purpose": "用户提供的控制台截图；最终界面需按当前 App 重采"
+    },
+    {
+      "file": "assets/provided-finder.png",
+      "source": "/var/folders/lf/zll5whg118q4yd9jnq61mxgm0000gn/T/TemporaryItems/NSIRD_screencaptureui_ETthth/截屏2026-09-25 上午10.34.24.png",
+      "bytes": 986270,
+      "sha256": "9d824880f14ca226e5d85d5eae64dcf61e8b473cbf300aea31e99d30048a4554",
+      "purpose": "用户提供的 Finder 与输入条截图；构图参考，最终需干净演示目录录制"
+    },
+    {
+      "file": "assets/app-icon.png",
+      "source": "/Users/trip/TRUE 开发/Fleqi/resources/icons/icon.png",
+      "bytes": 95753,
+      "sha256": "f6d7e2cc90e43a73b053a58110f02837dbf9b43dc03ef42335e149538d0d3b68",
+      "purpose": "项目已有 App 图标；片头片尾使用，保持设计原貌"
+    }
+  ]
+}

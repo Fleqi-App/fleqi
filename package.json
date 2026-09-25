@@ -1,0 +1,35 @@
+{
+  "name": "fleqi",
+  "private": true,
+  "version": "0.0.2",
+  "type": "module",
+  "description": "Fleqi — 开源通用桌面命令助手（AGPL-3.0-only）。本包是新 App 的 workspace 根，见 docs/README.md。",
+  "packageManager": "pnpm@10.33.4",
+  "engines": {
+    "node": ">=26.8.1",
+    "pnpm": "10.33.4"
+  },
+  "scripts": {
+    "doctor": "node scripts/doctor.mjs",
+    "check": "pnpm run check:docs && pnpm run check:traceability && pnpm run check:references && pnpm run check:repo && pnpm run check:rust && pnpm run check:contracts && pnpm run check:boundaries && pnpm run typecheck",
+    "check:docs": "node scripts/check-docs.mjs",
+    "check:traceability": "node scripts/check-traceability.mjs",
+    "check:references": "node scripts/check-references.mjs",
+    "check:repo": "node scripts/check-repo.mjs",
+    "check:rust": "node scripts/check-rust.mjs",
+    "check:contracts": "node scripts/check-contracts.mjs",
+    "check:boundaries": "node scripts/check-boundaries.mjs",
+    "contracts:regen": "node scripts/regen-contracts.mjs",
+    "typecheck": "pnpm -r run typecheck",
+    "build": "pnpm -r run build",
+    "dev:ui": "pnpm --filter @fleqi/ui run dev",
+    "test:ui": "pnpm --filter @fleqi/ui run test",
+    "test:ui:update": "pnpm --filter @fleqi/ui run test:e2e:update",
+    "test:desktop": "node scripts/test-desktop.mjs",
+    "verify:package": "node scripts/verify-package.mjs",
+    "tauri": "node scripts/tauri.mjs"
+  },
+  "devDependencies": {
+    "typescript": "5.9.3"
+  }
+}

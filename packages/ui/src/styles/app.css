@@ -1,0 +1,144 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "./tokens.css";
+@import "./components.css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --color-background: var(--fleqi-background);
+  --color-sidebar: var(--fleqi-sidebar);
+  --color-card: var(--fleqi-card);
+  --color-foreground: var(--fleqi-foreground);
+  --color-muted-foreground: var(--fleqi-muted-foreground);
+  --color-border: var(--fleqi-border);
+  --color-accent-surface: var(--fleqi-accent-surface);
+  --color-navigation-icon: var(--fleqi-navigation-icon);
+  --color-terminal-mode-text: var(--fleqi-terminal-mode-text);
+  --color-success: var(--fleqi-success);
+  --color-warning: var(--fleqi-warning);
+  --color-error: var(--fleqi-error);
+  --color-input: var(--fleqi-card);
+  --color-muted: var(--fleqi-accent-surface);
+  --color-primary: var(--fleqi-foreground);
+  --font-ui: var(--fleqi-font-ui);
+  --font-mono: var(--fleqi-font-mono);
+  --ease-fleqi: var(--fleqi-ease);
+  --duration-feedback: var(--fleqi-motion-feedback);
+  --duration-menu: var(--fleqi-motion-menu);
+  --duration-layout: var(--fleqi-motion-layout);
+  --duration-window: var(--fleqi-motion-window);
+}
+
+@layer base {
+  * { border-color: var(--fleqi-border); }
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    margin: 0;
+    background: var(--color-background);
+    color: var(--color-foreground);
+    font-family: var(--font-ui);
+    font-size: 14px;
+    line-height: 20px;
+    -webkit-font-smoothing: antialiased;
+    user-select: none;
+  }
+
+  code,
+  pre,
+  .font-mono {
+    font-family: var(--font-mono);
+    user-select: text;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-navigation-icon);
+    outline-offset: 2px;
+  }
+
+  button {
+    font: inherit;
+    color: inherit;
+    /* WKWebView 会按系统外观绘制原生按钮（Tailwind preflight 保留 appearance: button）；
+       页面主题与系统外观可能不同，统一由 token 绘制。 */
+    -webkit-appearance: none;
+    appearance: none;
+    background: none;
+  }
+}
+
+@layer components {
+  [data-slot="button"] {
+    white-space: nowrap;
+    transition:
+      background-color var(--duration-feedback) var(--ease-fleqi),
+      border-color var(--duration-feedback) var(--ease-fleqi),
+      color var(--duration-feedback) var(--ease-fleqi),
+      transform var(--duration-feedback) var(--ease-fleqi);
+  }
+
+  [data-slot="button"]:active:not(:disabled) {
+    transform: scale(0.97);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    [data-slot="button"]:active:not(:disabled) {
+      transform: none;
+    }
+  }
+
+  [data-slot="spinner"] {
+    animation: fleqi-spin 900ms linear infinite;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    [data-slot="spinner"] {
+      animation: none;
+    }
+  }
+
+  @keyframes fleqi-spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+}
+
+[data-slot="badge"] { flex-shrink: 0; }
+.composer-notice [data-slot="inline-status"] { min-width: 0; }
+.composer-notice [data-slot="inline-status"] > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.composer-window, body:has(.composer-window) { background: transparent; }
+
+:root[data-motion="reduce"] [data-slot="button"]:active:not(:disabled) { transform: none; }
+:root[data-motion="reduce"] [data-slot="spinner"] { animation: none; }
+
+/* 无边框原生窗口（ui-design.md §2.1）：宿主以 decorations=false + transparent 创建，
+   由 [data-chrome="native"] 启用透明背景与圆角；浏览器预览不带标记不受影响。 */
+:root[data-chrome="native"] {
+  background: transparent;
+}
+
+:root[data-chrome="native"] body {
+  background: transparent;
+}
+
+@layer components {
+  :root[data-chrome="native"] [data-window-root] {
+    border-radius: 10px;
+    overflow: hidden;
+  }
+
+  :root[data-chrome="native"] [data-window-root="composer"] {
+    border-radius: 14px;
+  }
+}
+
+/* 视觉圆点 12px，独立命中区 24px，互不重叠。 */
+.traffic-close { background: radial-gradient(circle, #ff5f57 0 6px, transparent 6px); }
+.traffic-minimize { background: radial-gradient(circle, #febc2e 0 6px, transparent 6px); }
+.traffic-maximize { background: radial-gradient(circle, #28c840 0 6px, transparent 6px); }

@@ -1,0 +1,504 @@
+{
+  "schemaVersion": 1,
+  "capturedAt": "2026-09-15",
+  "assets": [
+    {
+      "path": "Web APP/.gitignore",
+      "bytes": 89,
+      "sha256": "9bf849632299e243d08b2bec7bd7493580ec7e500f2d8e9b3f794ca23c91fa16",
+      "storage": "git"
+    },
+    {
+      "path": "Web APP/AGENTS.md",
+      "bytes": 831,
+      "sha256": "d12f02a194e688020407354edc57d89997e0d2e95c3748f4e9390bd8c3ba0ae3",
+      "storage": "git"
+    },
+    {
+      "path": "Web APP/COUPLING.md",
+      "bytes": 3461,
+      "sha256": "07731fe98eb33582ebb615a443ea5eec506e228fe16ffff482f1077386b97f10",
+      "storage": "git"
+    },
+    {
+      "path": "Web APP/CoreUI.tsx",
+      "bytes": 372,
+      "sha256": "eac379fe5ea95643ae2ef9bcdb5fc9b666a46d1e73364a9bb770d191c5de9e16",
+      "storage": "git"
+    },
+    {
+      "path": "Web APP/README.md",
+      "bytes": 2853,
+      "sha256": "aaf44710b1d458ab56fd82fc92247d8c89d790dd1bd251de5d28340d1057509e",
+      "storage": "git"
+    },
+    {
+      "path": "Web APP/UI_INVENTORY.json",
+      "bytes": 6890,
+      "sha256": "f926a29c299e712e63e98270fa44f5902b00c82855f3e98e1c4c586dc487f754",
+      "storage": "git"
+    },
+    {
+      "path": "Web APP/components.json",
+      "bytes": 383,
+      "sha256": "439fcaf9b4845f4aee7c743f960153d9659cea6329e3ea5a0e966441f17f86cb",
+      "storage": "git"
+    },
+    {
+      "path": "Web APP/docs/previews/core-settings-general.png",
+      "bytes": 57429,
+      "sha256": "9a07282d5b489b0e8372e00211a83b811827edb73cc736e8c0552bf5863c99c7",
+      "storage": "git"
+    },
+    {
+      "path": "Web APP/docs/previews/core-workspace.png",
+      "bytes": 74145,
+      "sha256": "28523fab2830b97dfca58ed3a54d5e6498272e433f749eaa0af588e17e03afcf",
+      "storage": "git"
+    },
+    {
+      "path": "Web APP/index.html",
+      "bytes": 423,
+      "sha256": "6133088585890b77c09685d074496be316d4b5ceaa1b64e0be899b16892d302b",
+      "storage": "git"
+    },
+    {
+      "path": "Web APP/package.json",
+      "bytes": 924,
+      "sha256": "3d36243127d78aec7c56f5d3e3ea9238932b851130f0a467b12ccced40150c17",
+      "storage": "git"
+    },
+    {
+      "path": "Web APP/playwright.config.ts",
+      "bytes": 584,
+      "sha256": "c0566a32b20536c6e42ad6974b2e446f2722a6b537270c99c6abdc5b864f6a29",
+      "storage": "git"
+    },
+    {
+      "path": "Web APP/pnpm-lock.yaml",
+      "bytes": 119760,
+      "sha256": "0915b33f20818d716144a18aa3e0a3f355a23d0f877478072b922992c5c58125",
+      "storage": "git"
+    },
+    {
+      "path": "Web APP/public/app-icon.png",
+      "bytes": 14600,
+      "sha256": "c6e48cb46c44cd191f08d7dbb90fe6b005b588372c86da14961fa61c965929e3",
+      "storage": "git"
+    },
+    {
+      "path": "Web APP/public/icon.svg",
+      "bytes": 1384,
+      "sha256": "d65a63e923d546e28793425fe6f7f5de197a9f666b8354b0c5c17c4f03a1b5aa",
+      "storage": "git"
+    },
+    {
+      "path": "Web APP/references/settings-general.png",
+      "bytes": 241213,
+      "sha256": "44771dee48b9145d2f72d61a565b7e5da34cf98006e6843b1e5778e17cb9c161",
+      "storage": "git"
+    },
+    {
+      "path": "Web APP/references/workspace.png",
+      "bytes": 668085,
+      "sha256": "a22c0425b1d21d43ece71ee8c699a265cd1d3611a14e801b72de7a3128541b95",
+      "storage": "git"
+    },
+    {
+      "path": "Web APP/scripts/check-ui-boundaries.mjs",
+      "bytes": 1745,
+      "sha256": "738e16dbb02112fa45c805112c55ebf9d50c286f78bed0430fe695a73853a775",
+      "storage": "git"
+    },
+    {
+      "path": "Web APP/src/assets/icons/common/clock.arrow.trianglehead.counterclockwise.rotate.90.svg",
+      "bytes": 1592,
+      "sha256": "438a967bc04bb67f48c37064170a17dcfd0cc5a0ac8ccebf1db2e81182bbae36",
+      "storage": "git"
+    },
+    {
+      "path": "Web APP/src/assets/icons/common/custom.link.svg",
+      "bytes": 1499,
+      "sha256": "34c930b9f30e7e32abed71c12cfabc44c644dcbfe367cab07525a4430a32ea3b",
+      "storage": "git"
+    },
+    {
+      "path": "Web APP/src/assets/icons/common/gearshape.2.svg",
+      "bytes": 7320,
+      "sha256": "f30d41270afef925532ed4486c487c256ca1184cbb9660eeac124cc49baa6654",
+      "storage": "git"
+    },
+    {
+      "path": "Web APP/src/assets/icons/common/info.circle.svg",
+      "bytes": 1539,
+      "sha256": "ea7d44e71133b0bd2b245ac7fdc734713313b0aa6bd86672d37bb6baad6442cd",
+      "storage": "git"
+    },
+    {
+      "path": "Web APP/src/assets/icons/common/paintpalette.svg",
+      "bytes": 2445,
+      "sha256": "f230de7b87fbc9d5990089a85279deb71f32937f4ddab192dd196166f2157415",
+      "storage": "git"
+    },
+    {
+      "path": "Web APP/src/assets/icons/common/shield.lefthalf.filled.svg",
+      "bytes": 1208,
+      "sha256": "b1a040d5e563896fc0a14ac970d5858779a28d1b3916c8a80fb91015bacda650",
+      "storage": "git"
+    },
+    {
+      "path": "Web APP/src/assets/icons/folder/folder.svg",
+      "bytes": 1342,
+      "sha256": "08cc53956338fc335c0283d8867dc5a2f6d5b98e4a1a5a595607d5e1fbda36f4",
+      "storage": "git"
+    },
+    {
+      "path": "Web APP/src/components/ui/button.tsx",
+      "bytes": 2391,
+      "sha256": "557e27d5d3159c338da761c5aec138dcd32d313b5a55774ea8001c3f3bfc620c",
+      "storage": "git"
+    },
+    {
+      "path": "Web APP/src/components/ui/card.tsx",
+      "bytes": 1986,
+      "sha256": "39480d5b63e46554f1cfcedaa91052c848bda5c45d7a5dda80fe91e7be604fb0",
+      "storage": "git"
+    },
+    {
+      "path": "Web APP/src/components/ui/dialog.tsx",
+      "bytes": 5957,
+      "sha256": "4d2a73f594b8335c7c088e309131e890d610aee5944a5bc4d7b6e6298058f213",
+      "storage": "git"
+    },
+    {
+      "path": "Web APP/src/components/ui/input.tsx",
+      "bytes": 961,
+      "sha256": "7bfd0eff6c53a38c99184394a09f55e7a86c725de12d6a300fa46b3765114091",
+      "storage": "git"
+    },
+    {
+      "path": "Web APP/src/components/ui/select.tsx",
+      "bytes": 6346,
+      "sha256": "402f71c64ab9a924822990cff279d031733f25284babe8c5a98e6130035dbe75",
+      "storage": "git"
+    },
+    {
+      "path": "Web APP/src/components/ui/switch.tsx",
+      "bytes": 1393,
+      "sha256": "020bf55cdeab5fedbe186d21b9f57101a196a4e147067ac2f0d5f0f4d4489282",
+      "storage": "git"
+    },
+    {
+      "path": "Web APP/src/core/GeneralSettingsUI.tsx",
+      "bytes": 7965,
+      "sha256": "dd4fa8ea2314c2f228272e3bbe4e06561724722c30034cc0c94415bbb57fd144",
+      "storage": "git"
+    },
+    {
+      "path": "Web APP/src/core/WorkspaceUI.tsx",
+      "bytes": 5591,
+      "sha256": "d17f42a5c45d273b99e3ddc13070209620a47e74cfc9180023cc04567b629577",
+      "storage": "git"
+    },
+    {
+      "path": "Web APP/src/core/contracts.ts",
+      "bytes": 1153,
+      "sha256": "ad9a935d2292ef6a8a3483da792f8c70ce9cb0531934ccb9ce9cf44904ec2383",
+      "storage": "git"
+    },
+    {
+      "path": "Web APP/src/core/controls.tsx",
+      "bytes": 1245,
+      "sha256": "c71b2025d4d78c3d3021aa28504b7bf8ea3ca4e6864acd875dca3be111186c6f",
+      "storage": "git"
+    },
+    {
+      "path": "Web APP/src/icons.tsx",
+      "bytes": 1350,
+      "sha256": "42001eda17fecf3c137bd71b9d57ccbcda1db959d14be1f2952de9ea4c0cd691",
+      "storage": "git"
+    },
+    {
+      "path": "Web APP/src/lib/utils.ts",
+      "bytes": 165,
+      "sha256": "968811b9a6df43e3f66c6c6868e94efd58c5ee12825ecea0c0b3e2d43905857e",
+      "storage": "git"
+    },
+    {
+      "path": "Web APP/src/main.tsx",
+      "bytes": 661,
+      "sha256": "98176fc99283155ee41d57bba96642d481c14e1f687894a8fa1e3fc5736e4a1a",
+      "storage": "git"
+    },
+    {
+      "path": "Web APP/src/motion/index.tsx",
+      "bytes": 1630,
+      "sha256": "c7e18b01e81f20a3ee230d385697a80cdb8c81f7f005d9f143e4f22558a09e0e",
+      "storage": "git"
+    },
+    {
+      "path": "Web APP/src/motion/origin.ts",
+      "bytes": 1692,
+      "sha256": "080a911ea92cfb3682bd62a4856fb137b8df00fdf2a3f661668dd20c1b1d2ece",
+      "storage": "git"
+    },
+    {
+      "path": "Web APP/src/motion/tokens.json",
+      "bytes": 202,
+      "sha256": "0120aec3fbc053f8d8a47fb6c5be4d2bb479a93d9ae7c039a1f9fc5e8b80a87b",
+      "storage": "git"
+    },
+    {
+      "path": "Web APP/src/motion.css",
+      "bytes": 2069,
+      "sha256": "312e2961697ac699f4c2c4bdaddee876d100a676e23d2e67b7e6d4687e8f18de",
+      "storage": "git"
+    },
+    {
+      "path": "Web APP/src/preview/App.tsx",
+      "bytes": 2888,
+      "sha256": "5dc3db08fdf725da3603817ffe4a3c030ec15cb1653e9bedc65ec41c34756ef8",
+      "storage": "git"
+    },
+    {
+      "path": "Web APP/src/shadcn.css",
+      "bytes": 2763,
+      "sha256": "1c00c2ec7ed2df0073e10b0c1be174e152dd316c8910af3c1fa229389e506a09",
+      "storage": "git"
+    },
+    {
+      "path": "Web APP/src/styles.css",
+      "bytes": 12316,
+      "sha256": "04d7b58101e0ed088fac4f1a778aeeee8a5333157e552e123e96ff0a7deddd06",
+      "storage": "git"
+    },
+    {
+      "path": "Web APP/tests/core-ui.spec.ts",
+      "bytes": 5224,
+      "sha256": "e1c48cb2455739c2e6645e20a3f27036d19473ef49df60eab10810c541291168",
+      "storage": "git"
+    },
+    {
+      "path": "Web APP/tsconfig.json",
+      "bytes": 594,
+      "sha256": "8cfd12a9a4bd558453e319937b3cab0a785ec475bc59022367ab0f15452a27bc",
+      "storage": "git"
+    },
+    {
+      "path": "Web APP/vite.config.ts",
+      "bytes": 408,
+      "sha256": "ac0a48386a48dccd54d5a1fa1df36458cc1f3caac0c2fab7603660a45e754f32",
+      "storage": "git"
+    },
+    {
+      "path": "Icon/Linux/Fleqi-1024.png",
+      "bytes": 1479239,
+      "sha256": "e4abce9e8734b5f9ddbe662010007e44105e3a698fabe706887c3e9428580dcf",
+      "storage": "git"
+    },
+    {
+      "path": "Icon/README.md",
+      "bytes": 3833,
+      "sha256": "a114b35448991b21d3291f145d367d3ff44083c4e6150f313a29f1f0f46e8fc2",
+      "storage": "git"
+    },
+    {
+      "path": "Icon/Windows/Fleqi-1024.png",
+      "bytes": 1479239,
+      "sha256": "e4abce9e8734b5f9ddbe662010007e44105e3a698fabe706887c3e9428580dcf",
+      "storage": "git"
+    },
+    {
+      "path": "Icon/design/01_terminal_base.png",
+      "bytes": 10194,
+      "sha256": "021e80278d124046b38a9bc5814c9d855f804a8f3383c5da308dc1f664bb2e20",
+      "storage": "git"
+    },
+    {
+      "path": "Icon/design/02_folder_back.png",
+      "bytes": 8816,
+      "sha256": "3cb9566430de987ab17daa6428b64bf7be1a5129e7de6711d29d23fb734707fc",
+      "storage": "git"
+    },
+    {
+      "path": "Icon/design/03_paper.png",
+      "bytes": 6759,
+      "sha256": "5892699ebb6665867053c8c66daef94a4d7b4263d109eb46da1fef716f31de21",
+      "storage": "git"
+    },
+    {
+      "path": "Icon/design/04_folder_tab.png",
+      "bytes": 10583,
+      "sha256": "7ce899959f8bc614a23d698d6d9b6442b5bd81f02236d15adbeca98561b3b2c4",
+      "storage": "git"
+    },
+    {
+      "path": "Icon/design/05_folder_front.png",
+      "bytes": 8788,
+      "sha256": "b8cb7d4ab1a7e7b2670753a5c1fa677995a2272eded3749fd60710d76349582f",
+      "storage": "git"
+    },
+    {
+      "path": "Icon/design/06_terminal_arrow.png",
+      "bytes": 8462,
+      "sha256": "aba9d727304c89cf3263c3fcaae52c839051c133d94e7b976a941f026d8d9c83",
+      "storage": "git"
+    },
+    {
+      "path": "Icon/design/Fleqi.icon/Assets/01_terminal_base.png",
+      "bytes": 10194,
+      "sha256": "021e80278d124046b38a9bc5814c9d855f804a8f3383c5da308dc1f664bb2e20",
+      "storage": "git"
+    },
+    {
+      "path": "Icon/design/Fleqi.icon/Assets/02_folder_back.png",
+      "bytes": 8816,
+      "sha256": "3cb9566430de987ab17daa6428b64bf7be1a5129e7de6711d29d23fb734707fc",
+      "storage": "git"
+    },
+    {
+      "path": "Icon/design/Fleqi.icon/Assets/03_paper 2.png",
+      "bytes": 6759,
+      "sha256": "5892699ebb6665867053c8c66daef94a4d7b4263d109eb46da1fef716f31de21",
+      "storage": "git"
+    },
+    {
+      "path": "Icon/design/Fleqi.icon/Assets/04_folder_tab.png",
+      "bytes": 10583,
+      "sha256": "7ce899959f8bc614a23d698d6d9b6442b5bd81f02236d15adbeca98561b3b2c4",
+      "storage": "git"
+    },
+    {
+      "path": "Icon/design/Fleqi.icon/Assets/05_folder_front.png",
+      "bytes": 8788,
+      "sha256": "b8cb7d4ab1a7e7b2670753a5c1fa677995a2272eded3749fd60710d76349582f",
+      "storage": "git"
+    },
+    {
+      "path": "Icon/design/Fleqi.icon/Assets/06_terminal_arrow.png",
+      "bytes": 8462,
+      "sha256": "aba9d727304c89cf3263c3fcaae52c839051c133d94e7b976a941f026d8d9c83",
+      "storage": "git"
+    },
+    {
+      "path": "Icon/design/Fleqi.icon/Assets/text.alignleft.svg",
+      "bytes": 1449,
+      "sha256": "9916e8b3475aa5460f39bad801898f6d981dcc55caa9304e5e9c2f1bb3941ed1",
+      "storage": "git"
+    },
+    {
+      "path": "Icon/design/Fleqi.icon/icon.json",
+      "bytes": 4546,
+      "sha256": "b86d343c499c03a7f2ae7269e005a4b969c0d32ef7c431f2704a0adbe6ced5a7",
+      "storage": "git"
+    },
+    {
+      "path": "Icon/design/app-icon-preview.png",
+      "bytes": 482101,
+      "sha256": "6fb457b5fa495e44b2a184648bb9e63a5d811e2f43f54442c7559df5af6dd8cf",
+      "storage": "git"
+    },
+    {
+      "path": "Icon/design/layer_overview.jpg",
+      "bytes": 149009,
+      "sha256": "4dc64331cb12dda197907e93cad730b395c19d872a77fa86d3f7bd56fec2288b",
+      "storage": "git"
+    },
+    {
+      "path": "Icon/exports/Fleqi-iOS-ClearDark-1024@1x.png",
+      "bytes": 450247,
+      "sha256": "5779a1215fb40eb9657699891db5e63b2fda9bef4f7dcc7cf60df964185c12d2",
+      "storage": "git"
+    },
+    {
+      "path": "Icon/exports/Fleqi-iOS-ClearLight-1024@1x.png",
+      "bytes": 389085,
+      "sha256": "68cdbc76666c58b2000bcdb8fa587f6f526cd6715ee51958882f224f4f315592",
+      "storage": "git"
+    },
+    {
+      "path": "Icon/exports/Fleqi-iOS-Dark-1024@1x.png",
+      "bytes": 1603942,
+      "sha256": "9d6b6873885d7669e1f56619be4aaa7754598f449a9ace6ba562735cc045b563",
+      "storage": "git"
+    },
+    {
+      "path": "Icon/exports/Fleqi-iOS-Default-1024@1x.png",
+      "bytes": 1479239,
+      "sha256": "e4abce9e8734b5f9ddbe662010007e44105e3a698fabe706887c3e9428580dcf",
+      "storage": "git"
+    },
+    {
+      "path": "Icon/macos/Fleqi.icon/Assets/01_terminal_base.png",
+      "bytes": 10194,
+      "sha256": "021e80278d124046b38a9bc5814c9d855f804a8f3383c5da308dc1f664bb2e20",
+      "storage": "git"
+    },
+    {
+      "path": "Icon/macos/Fleqi.icon/Assets/02_folder_back.png",
+      "bytes": 8816,
+      "sha256": "3cb9566430de987ab17daa6428b64bf7be1a5129e7de6711d29d23fb734707fc",
+      "storage": "git"
+    },
+    {
+      "path": "Icon/macos/Fleqi.icon/Assets/03_paper 2.png",
+      "bytes": 6759,
+      "sha256": "5892699ebb6665867053c8c66daef94a4d7b4263d109eb46da1fef716f31de21",
+      "storage": "git"
+    },
+    {
+      "path": "Icon/macos/Fleqi.icon/Assets/04_folder_tab.png",
+      "bytes": 10583,
+      "sha256": "7ce899959f8bc614a23d698d6d9b6442b5bd81f02236d15adbeca98561b3b2c4",
+      "storage": "git"
+    },
+    {
+      "path": "Icon/macos/Fleqi.icon/Assets/05_folder_front.png",
+      "bytes": 8788,
+      "sha256": "b8cb7d4ab1a7e7b2670753a5c1fa677995a2272eded3749fd60710d76349582f",
+      "storage": "git"
+    },
+    {
+      "path": "Icon/macos/Fleqi.icon/Assets/06_terminal_arrow.png",
+      "bytes": 8462,
+      "sha256": "aba9d727304c89cf3263c3fcaae52c839051c133d94e7b976a941f026d8d9c83",
+      "storage": "git"
+    },
+    {
+      "path": "Icon/macos/Fleqi.icon/Assets/text.alignleft.svg",
+      "bytes": 1449,
+      "sha256": "9916e8b3475aa5460f39bad801898f6d981dcc55caa9304e5e9c2f1bb3941ed1",
+      "storage": "git"
+    },
+    {
+      "path": "Icon/macos/Fleqi.icon/icon.json",
+      "bytes": 4546,
+      "sha256": "b86d343c499c03a7f2ae7269e005a4b969c0d32ef7c431f2704a0adbe6ced5a7",
+      "storage": "git"
+    },
+    {
+      "path": "Icon/symbols/sf-symbols/README.md",
+      "bytes": 2783,
+      "sha256": "76a9a7c531b58925322eef53f843081301d4463da6e91db22659249ce8385a51",
+      "storage": "git"
+    },
+    {
+      "path": "Icon/symbols/sf-symbols/gearshape.2.regular.svg",
+      "bytes": 7195,
+      "sha256": "6d65fbc32773de076a68d406b61959a105b5e29bd96de442660d89f677247ef9",
+      "storage": "git"
+    },
+    {
+      "path": "Icon/symbols/sf-symbols/gearshape.2.svg",
+      "bytes": 34898,
+      "sha256": "9af5ddd6185f088a2db59834b750268ca45dd4b5824c0d004227572c3cc55eb5",
+      "storage": "git"
+    },
+    {
+      "path": "docs/交互设计参考.mov",
+      "bytes": 281736552,
+      "sha256": "149b523d85b27ddf76681261cb423cd743d86c1e1543fedd83ad56acf0233f7d",
+      "storage": "localOnly"
+    }
+  ]
+}

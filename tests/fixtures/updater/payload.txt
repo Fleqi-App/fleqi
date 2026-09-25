@@ -1,0 +1,1 @@
+Fleqi signed updater transport fixture. Contains no application or credentials.

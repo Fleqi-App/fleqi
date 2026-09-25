@@ -1,0 +1,17 @@
+{
+  "name": "@fleqi/contracts",
+  "version": "0.0.2",
+  "private": true,
+  "type": "module",
+  "description": "从 Rust DTO（crates/fleqi-application）经 ts-rs 生成的 TypeScript 契约类型。src/bindings/ 为生成产物：用 pnpm contracts:regen 更新，pnpm check:contracts 校验，不要手改。",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "devDependencies": {
+    "typescript": "5.9.3"
+  }
+}

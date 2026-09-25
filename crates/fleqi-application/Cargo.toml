@@ -1,0 +1,25 @@
+[package]
+name = "fleqi-application"
+description = "Fleqi 应用层：用例、端口与跨 IPC DTO（serde camelCase，ts-rs 显式导出）"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+fleqi-domain = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = "0.10"
+thiserror = { workspace = true }
+time = { version = "0.3", features = ["formatting"] }
+ts-rs = { workspace = true }
+url = "2.5.8"
+
+[dev-dependencies]
+tempfile = "3"
+
+[features]
+# 显式契约导出：仅 check:contracts / contracts:regen 使用。
+export-contracts = []

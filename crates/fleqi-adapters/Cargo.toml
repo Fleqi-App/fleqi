@@ -1,0 +1,31 @@
+[package]
+name = "fleqi-adapters"
+description = "Fleqi 基础设施适配：process、terminal、model、storage 与工具下载"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+fleqi-domain = { workspace = true }
+fleqi-application = { workspace = true }
+libc = "0.2"
+portable-pty = "0.9.0"
+image = { version = "0.25.10", default-features = false, features = ["png", "jpeg", "webp", "gif", "ico", "tiff", "bmp"] }
+lopdf = { version = "0.45.0", default-features = false }
+regex = "1"
+quick-xml = "0.42"
+reqwest = { version = "0.13.5", features = ["blocking", "json"] }
+rusqlite = { version = "0.40.2", features = ["bundled", "backup"] }
+serde = { workspace = true }
+sha2 = "0.10"
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+time = { version = "0.3", features = ["formatting"] }
+vt100 = "0.16.2"
+zip = { version = "8.6.0", default-features = false, features = ["deflate"] }
+
+tempfile = "3"
+
+[dev-dependencies]

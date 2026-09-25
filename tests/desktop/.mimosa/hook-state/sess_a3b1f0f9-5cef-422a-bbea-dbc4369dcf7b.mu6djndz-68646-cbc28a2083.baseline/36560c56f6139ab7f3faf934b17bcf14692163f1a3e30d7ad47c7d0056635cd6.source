@@ -1,0 +1,108 @@
+import { $, browser, expect } from "@wdio/globals";
+import { writeEvidence } from "../lib/evidence";
+
+// 经页面内 Tauri 桥调用真实 IPC（与 UI 同一条桥，不 mock）。
+// 会话/PTY 编排已由 Rust 集成测试（m2_services、terminal，真实 zsh）覆盖；
+// 本文件验证宿主 IPC 的真实拒绝/接受路径，全部使用零参字面量闭包。
+declare global {
+  interface Window {
+    __TAURI_INTERNALS__: { invoke: (cmd: string, args?: Record<string, unknown>) => Promise<unknown> };
+  }
+}
+
+type Outcome = { ok: boolean; value?: unknown; error?: unknown };
+
+async function switchToConsole(): Promise<void> {
+  await browser.waitUntil(
+    async () => {
+      for (const handle of await browser.getWindowHandles()) {
+        await browser.switchToWindow(handle);
+        if ((await browser.getUrl()).includes("#/console")) return true;
+      }
+      return false;
+    },
+    { timeout: 30_000 },
+  );
+}
+
+describe("M2.6 · 输入条显示状态机与热键（真实 IPC）", () => {
+  it("manual 无热键：surface_show 被拒绝并引导快捷键（FR-ENTRY-003）", async () => {
+    await switchToConsole();
+    await $("[data-phase='ready']").waitForExist({ timeout: 30_000 });
+    await browser.waitUntil(async () => (await $("[data-testid='host-state']").getAttribute("data-host-state")) === "ready", { timeout: 20_000 });
+    const result = (await browser.execute(() =>
+      window.__TAURI_INTERNALS__.invoke("surface_show").then(
+        (value) => ({ ok: true, value }),
+        (error) => ({ ok: false, error }),
+      ),
+    )) as Outcome;
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      const error = result.error as { code: string; message: string };
+      expect(error.code).toBe("unavailable");
+      expect(error.message).toContain("快捷键");
+    }
+  });
+
+  it("热键真实注册 → 显式显示（自动建会话）→ keepAll 隐藏 → 再显式显示新建（FR-SESSION-002/004）", async () => {
+    const committed = (await browser.execute(() =>
+      window.__TAURI_INTERNALS__.invoke("hotkey_commit", { requestId: "m2-hotkey", accelerator: "CommandOrControl+Shift+F" }).then(
+        (value) => ({ ok: true, value }),
+        (error) => ({ ok: false, error }),
+      ),
+    )) as Outcome;
+    expect(committed.ok).toBe(true);
+    if (committed.ok) {
+      const value = committed.value as { registered: string | null; message: string | null };
+      expect(value.registered).toBe("CommandOrControl+Shift+F");
+      expect(value.message).toBeNull();
+    }
+
+    const shown = (await browser.execute(() =>
+      window.__TAURI_INTERNALS__.invoke("surface_show").then(
+        (value) => ({ ok: true, value }),
+        (error) => ({ ok: false, error }),
+      ),
+    )) as Outcome;
+    expect(shown.ok).toBe(true);
+    let firstSession = "";
+    if (shown.ok) {
+      const value = shown.value as { visibility: string; visibleSessionId: string | null };
+      expect(value.visibility).toBe("visible");
+      expect(typeof value.visibleSessionId).toBe("string");
+      firstSession = value.visibleSessionId ?? "";
+    }
+
+    const hidden = (await browser.execute(() =>
+      window.__TAURI_INTERNALS__.invoke("surface_hide").then(
+        (value) => ({ ok: true, value }),
+        (error) => ({ ok: false, error }),
+      ),
+    )) as Outcome;
+    expect(hidden.ok).toBe(true);
+    if (hidden.ok) {
+      expect((hidden.value as { visibility: string }).visibility).toBe("userHidden");
+    }
+
+    const reshow = (await browser.execute(() =>
+      window.__TAURI_INTERNALS__.invoke("surface_show").then(
+        (value) => ({ ok: true, value }),
+        (error) => ({ ok: false, error }),
+      ),
+    )) as Outcome;
+    expect(reshow.ok).toBe(true);
+    if (reshow.ok) {
+      const value = reshow.value as { visibleSessionId: string | null };
+      expect((value.visibleSessionId ?? "")).not.toBe(firstSession);
+    }
+
+    writeEvidence("m2-surface-evidence.json", {
+      capturedAt: new Date().toISOString(),
+      hotkey: committed.ok ? committed.value : null,
+      firstShow: shown.ok ? shown.value : null,
+      hide: hidden.ok ? hidden.value : null,
+      reshow: reshow.ok ? reshow.value : null,
+      note: "真实 surface_show/hide 与 global-shortcut 注册；keepAll 隐藏后再次显式显示创建新会话（FR-SESSION-002）。",
+    });
+  });
+});

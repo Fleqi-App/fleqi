@@ -1,0 +1,14 @@
+{
+  "schemaVersion": "mimosa-hook-status/v1",
+  "recordedAt": "2026-09-17T11:16:39.059Z",
+  "sessionId": "sess_a3b1f0f9-5cef-422a-bbea-dbc4369dcf7b",
+  "event": "PostToolUse",
+  "toolName": "Edit",
+  "file": "/Users/trip/TRUE 开发/Fleqi/Cargo.toml",
+  "outcome": "inconclusive",
+  "coverage": "partial",
+  "findingCount": 0,
+  "durationMs": 2,
+  "hostState": "hook_complete",
+  "reportHint": ".mimosa/reports/"
+}

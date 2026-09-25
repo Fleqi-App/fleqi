@@ -1,0 +1,134 @@
+import { $, browser, expect } from "@wdio/globals";
+import { evidencePath, writeEvidence } from "../lib/evidence";
+
+async function switchToWindowWithHash(fragment: string): Promise<string> {
+  let target: string | null = null;
+  await browser.waitUntil(
+    async () => {
+      for (const handle of await browser.getWindowHandles()) {
+        await browser.switchToWindow(handle);
+        if ((await browser.getUrl()).includes(fragment)) {
+          target = handle;
+          return true;
+        }
+      }
+      return false;
+    },
+    { timeout: 20_000, timeoutMsg: `未找到包含 ${fragment} 的窗口` },
+  );
+  return target!;
+}
+
+describe("M1.6 · 多窗口设置：真实保存、跨窗口一致、版本冲突与幂等", () => {
+  it("控制台打开设置窗口；外观修改真实保存并同步到控制台窗口", async () => {
+    await $("[data-phase='ready']").waitForExist({ timeout: 30_000 });
+    // 与 01 共享同一宿主进程：先回到概览页。
+    await $("button[data-sidebar='menu-button']*=概览").click();
+    await browser.waitUntil(async () => (await $("[data-testid='host-state']").getAttribute("data-host-state")) === "ready", { timeout: 20_000 });
+    const consoleHandle = await browser.getWindowHandle();
+    await $("button[data-sidebar='menu-button']*=设置").click();
+
+    const settingsHandle = await switchToWindowWithHash("#/settings");
+    expect(settingsHandle).not.toBe(consoleHandle);
+    await $("[data-phase='ready']").waitForExist({ timeout: 30_000 });
+    expect(await $("[data-phase='ready']").getAttribute("data-window-role")).toBe("settings");
+    // 再次点击控制台的"设置"：已存在的窗口走 show+focus 分支，把被遮挡的设置窗口带到前台
+    //（被完全遮挡的 WKWebView 会暂停渲染，截图证据需要窗口可见）。
+    await browser.switchToWindow(consoleHandle);
+    await $("button[data-sidebar='menu-button']*=设置").click();
+    await browser.switchToWindow(settingsHandle);
+    await browser.pause(300);
+    await $("#theme button[data-value='light']").waitForExist();
+    await $("#theme button[data-value='light']").click();
+    await browser.waitUntil(async () => (await $("[data-testid='save-theme']").getAttribute("data-save-state")) === "saved", {
+      timeout: 15_000,
+      timeoutMsg: "主题未保存",
+    });
+    expect(await $("html").getAttribute("data-theme")).toBe("light");
+    await $("[data-settings-revision='1']").waitForExist();
+    // 等待 settings:changed 触发的快照重拉完成后再取稳定值（避免读到过渡态）。
+    await browser.waitUntil(
+      async () => {
+        const groupValue = await $("#theme").getAttribute("data-value");
+        const theme = await $("html").getAttribute("data-theme");
+        return groupValue === "light" && theme === "light";
+      },
+      { timeout: 10_000, timeoutMsg: "设置窗口在事件重拉后未稳定为 light" },
+    );
+    expect(await $("#theme button[data-value='light']").getAttribute("aria-checked")).toBe("true");
+    const lightPill = await $("#theme button[data-value='light']").getCSSProperty("background-color");
+    const darkPill = await $("#theme button[data-value='dark']").getCSSProperty("background-color");
+    const lightColor = await $("#theme button[data-value='light']").getCSSProperty("color");
+    const groupHtml = await $("#theme").getHTML({ includeSelectorTag: true, prettify: false });
+    writeEvidence("m1-segmented-style-evidence.json", { lightPill: lightPill.value, darkPill: darkPill.value, lightColor: lightColor.value, groupHtml });
+    // settings:changed 之后 surface:changed 可能立刻覆盖 lastEvent（设置保存会路由到显示状态机）；
+    // 以真实效果（版本号与主题）判定，不依赖最后一个事件名。
+    await browser.saveScreenshot(evidencePath("m1-settings-appearance-saved.png"));
+
+    // 跨窗口一致：控制台窗口收到 settings.changed 后重拉快照并应用主题。
+    await browser.switchToWindow(consoleHandle);
+    await browser.waitUntil(async () => (await $("[data-field='settings-revision']").getText()) === "1", {
+      timeout: 15_000,
+      timeoutMsg: `控制台窗口未同步到版本 1（attempt=${await $("[data-phase='ready']").getAttribute("data-attempt")}, lastEvent=${await $("[data-phase='ready']").getAttribute("data-last-event")}, revision=${await $("[data-field='settings-revision']").getText()}）`,
+    });
+    expect(await $("html").getAttribute("data-theme")).toBe("light");
+    await browser.saveScreenshot(evidencePath("m1-console-after-theme-change.png"));
+    await browser.switchToWindow(settingsHandle);
+  });
+
+  it("透明材质保存 → 版本 2；过期 expectedRevision 返回 conflict 且携带当前版本", async () => {
+    await $("button#transparency").click();
+    await browser.waitUntil(async () => (await $("[data-testid='save-transparency']").getAttribute("data-save-state")) === "saved", { timeout: 15_000 });
+    await $("[data-settings-revision='2']").waitForExist();
+    expect(await $("html").getAttribute("data-transparency")).toBe("off");
+
+    const stale = await browser.execute(() =>
+      window.__TAURI_INTERNALS__
+        .invoke("settings_update", { request: { requestId: "wdio-stale-1", expectedRevision: "0", patch: { theme: "system" } } })
+        .then(
+          () => ({ ok: true }),
+          (error: { code: string; currentRevision?: string }) => ({ ok: false, code: error.code, currentRevision: error.currentRevision }),
+        ),
+    );
+    expect(stale).toEqual({ ok: false, code: "conflict", currentRevision: "2" });
+    await $("[data-settings-revision='2']").waitForExist();
+  });
+
+  it("同 requestId 同载荷重放不重复提交；同 ID 不同载荷返回 conflict", async () => {
+    const first = await browser.execute(() =>
+      window.__TAURI_INTERNALS__
+        .invoke("settings_update", { request: { requestId: "wdio-idem-1", expectedRevision: "2", patch: { motionMode: "reduce" } } })
+        .then((snapshot: { revision: string; motionMode: string }) => ({ ok: true, revision: snapshot.revision, motionMode: snapshot.motionMode })),
+    );
+    expect(first).toEqual({ ok: true, revision: "3", motionMode: "reduce" });
+    const replay = await browser.execute(() =>
+      window.__TAURI_INTERNALS__
+        .invoke("settings_update", { request: { requestId: "wdio-idem-1", expectedRevision: "2", patch: { motionMode: "reduce" } } })
+        .then((snapshot: { revision: string }) => ({ ok: true, revision: snapshot.revision })),
+    );
+    expect(replay).toEqual({ ok: true, revision: "3" });
+    const different = await browser.execute(() =>
+      window.__TAURI_INTERNALS__
+        .invoke("settings_update", { request: { requestId: "wdio-idem-1", expectedRevision: "2", patch: { motionMode: "system" } } })
+        .then(
+          () => ({ ok: true }),
+          (error: { code: string }) => ({ ok: false, code: error.code }),
+        ),
+    );
+    expect(different).toEqual({ ok: false, code: "conflict" });
+    await browser.waitUntil(async () => (await $("#motionMode").getAttribute("data-value")) === "reduce", { timeout: 15_000, timeoutMsg: "设置窗口未同步 motionMode" });
+    await $("[data-settings-revision='3']").waitForExist();
+    expect(await $("html").getAttribute("data-motion")).toBe("reduce");
+    writeEvidence("m1-settings-evidence.json", {
+      capturedAt: new Date().toISOString(),
+      sequence: ["theme=light → rev 1", "transparency=false → rev 2", "stale rev 0 → conflict(current 2)", "motionMode=reduce (idem-1) → rev 3", "replay idem-1 → rev 3", "idem-1 other payload → conflict"],
+      note: "全部经真实 settings_update IPC 与 SQLite 持久化；跨窗口经 settings.changed 事件重拉。",
+    });
+  });
+});
+
+declare global {
+  interface Window {
+    __TAURI_INTERNALS__: { invoke: (cmd: string, args?: Record<string, unknown>) => Promise<never> };
+  }
+}

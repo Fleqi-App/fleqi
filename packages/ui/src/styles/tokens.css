@@ -1,0 +1,64 @@
+/*
+ * Fleqi 设计 token（ui-design.md §12.1 / §13.1）。
+ * 三层：基础 token（本文件 --fleqi-*）→ 语义 token（@theme 映射）→ 组件 token。
+ * 深色为基线；theme=light 仅用于开发预览。
+ */
+:root,
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --fleqi-background: #171717;
+  --fleqi-sidebar: #1a1a1a;
+  --fleqi-card: #1e1e1e;
+  --fleqi-foreground: #fafafa;
+  --fleqi-muted-foreground: #979797;
+  --fleqi-border: #3a3a3a;
+  --fleqi-accent-surface: #2b2b2b;
+  --fleqi-navigation-icon: #7fb0ff;
+  --fleqi-terminal-mode-text: #74d99f;
+  --fleqi-success: #74d99f;
+  --fleqi-warning: #f3bf70;
+  --fleqi-error: #ff9999;
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+  --fleqi-background: #ffffff;
+  --fleqi-sidebar: #fafafa;
+  --fleqi-card: #ffffff;
+  --fleqi-foreground: #171717;
+  --fleqi-muted-foreground: #737373;
+  --fleqi-border: #e5e5e5;
+  --fleqi-accent-surface: #f0f0f0;
+  --fleqi-navigation-icon: #2e6fe4;
+  --fleqi-terminal-mode-text: #16743c;
+  --fleqi-success: #16743c;
+  --fleqi-warning: #885100;
+  --fleqi-error: #b42318;
+}
+
+:root {
+  /* 动效 token：曲线与五种职责时长（来自旧 tokens.json，作为新默认值） */
+  --fleqi-ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --fleqi-motion-feedback: 140ms;
+  --fleqi-motion-menu: 220ms;
+  --fleqi-motion-layout: 280ms;
+  --fleqi-motion-window: 320ms;
+  --fleqi-motion-composer: 520ms;
+  --fleqi-motion-submit: 180ms;
+  --fleqi-panel-origin: 48px bottom;
+  --fleqi-panel-enter-scale: .24;
+
+  --fleqi-font-ui: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Hiragino Sans GB", "Helvetica Neue", Arial, sans-serif;
+  --fleqi-font-mono: ui-monospace, "SF Mono", Menlo, Monaco, "PingFang SC", "Hiragino Sans GB", monospace;
+}
+
+/* 系统减少动态：移除位移/缩放/自动滚动动画，只保留静态状态（ui-design.md §11.4） */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --fleqi-motion-feedback: 0ms;
+    --fleqi-motion-menu: 0ms;
+    --fleqi-motion-layout: 0ms;
+    --fleqi-motion-window: 0ms;
+    --fleqi-motion-composer: 0ms;
+  }
+}

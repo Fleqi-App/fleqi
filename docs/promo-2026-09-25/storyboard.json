@@ -1,0 +1,273 @@
+{
+  "title": "Fleqi 宣传片 · 参考复刻方案",
+  "status": "待用户审阅；未开始最终录制与成片制作",
+  "fps": 30,
+  "width": 1920,
+  "height": 1080,
+  "durationInFrames": 2858,
+  "languageVersions": ["zh-CN", "en"],
+  "timebaseNote": "参考片名义 30fps，共 2858 帧；以下是制作拟定帧边界，依据抽帧定位，尚非逐帧反求的原工程参数。from 含、to 不含。",
+  "shots": [
+    {
+      "id": "S01", "from": 0, "to": 174, "referenceSecond": 3.5,
+      "title": "工具切换的痛点", "chapter": "开场",
+      "reference": "白底打字，周围浅色界面碎片逐渐漂入，句尾出现蓝色选区后退格。",
+      "zh": "同一批文件，来回切换工具。", "en": "Same files. Too many tools.",
+      "visual": "中心字卡；周围只放真实 Finder、预览与 Terminal 的裁片。蓝色选区选中“来回切换工具”/“Too many tools”，再退格。",
+      "capture": ["C01"], "motion": "保留原片中心留白、四周漂入和选中删字；背景裁片减淡，不裁成假应用窗口。",
+      "sfx": "按真实显字区间安排轻键盘音，退格短收。", "gate": "周围窗口来自实际录屏或截图；不把 Fleqi 的功能界面描绘成其它工具。"
+    },
+    {
+      "id": "S02", "from": 174, "to": 237, "referenceSecond": 7.5,
+      "title": "重复步骤", "chapter": "开场",
+      "reference": "第二句打字完成，镜头突然推近大字并穿出。",
+      "zh": "这些步骤，还要再来一遍？", "en": "The same steps. Again?",
+      "visual": "复用 S01 连续背景空间，第二句接替第一句；句尾问号落定后穿字。",
+      "capture": ["C01"], "motion": "相机推近，不逐个字弹跳；保留清晰阅读停顿再加速。",
+      "sfx": "短上扬与穿字风声。", "gate": "这是痛点字卡，不宣称具体节省时长。"
+    },
+    {
+      "id": "S03", "from": 237, "to": 303, "referenceSecond": 9.5,
+      "title": "转折", "chapter": "开场",
+      "reference": "柔焦大词缩小落定，白底带冷蓝边缘。",
+      "zh": "现在，一句话。", "en": "Now, just ask.",
+      "visual": "先显“现在”/“Now”，后接余句；保持原片白底、轻透视和蓝色弥散光。",
+      "capture": [], "motion": "由大到小，失焦到清晰；不做额外粒子。",
+      "sfx": "一记克制的转场声。", "gate": "一句话表示自然语言入口；后续镜头明确展示确认步骤。"
+    },
+    {
+      "id": "S04", "from": 303, "to": 390, "referenceSecond": 12,
+      "title": "Fleqi 登场", "chapter": "品牌",
+      "reference": "品牌引导词先放大，再缩回；图标和字标依次出现。",
+      "zh": "认识 Fleqi", "en": "Meet Fleqi",
+      "visual": "使用 resources/icons 的真实蓝色文件夹与终端图标；Fleqi 字标排在右侧。",
+      "capture": ["A01"], "motion": "继承原片字词推进、图标就位与蓝白渐变；字标完整后至少停 1 秒。",
+      "sfx": "轻品牌落点。", "gate": "不用控制台左上角的通用 ⌘ 符号代替正式 App 图标。"
+    },
+    {
+      "id": "S05", "from": 390, "to": 489, "referenceSecond": 15.5,
+      "title": "一句话定义产品", "chapter": "品牌",
+      "reference": "产品定位逐段补齐，关键词变蓝。",
+      "zh": "就在 Finder，用 AI 完成操作。", "en": "AI actions. Right in Finder.",
+      "visual": "白色中心、冷蓝边缘；只突出 AI 和 Finder，不塞入功能列表。",
+      "capture": [], "motion": "同原片词组揭示与轻缩放，完成后保持可读。",
+      "sfx": "短文字揭示声。", "gate": "Fleqi 是独立输入条配合 Finder，不把画面画成 Finder 内置功能。"
+    },
+    {
+      "id": "S06", "from": 489, "to": 624, "referenceSecond": 17.5,
+      "title": "Finder 与输入条主镜头", "chapter": "AI 实机",
+      "reference": "完整产品窗口从下方倾斜升入，回正后推向左侧列表。",
+      "zh": "选好文件，就在这里开始。", "en": "Select your files. Start right here.",
+      "visual": "真实 Finder 演示目录和下方 Fleqi 输入条作为完整一组升入；选中 Console.png、Finder.png 两个不透明 PNG。镜头推进选区与输入条。",
+      "capture": ["C02"], "motion": "整组画面保持 Finder 与输入条相对位置，按原片轻倾斜、回正、推近。",
+      "sfx": "窗口进入风声，选中项轻点击。", "gate": "真实读取两项选区；输入条已可见、目录有效，不使用附件中“已隐藏”的状态作为操作镜头。"
+    },
+    {
+      "id": "S07", "from": 624, "to": 690, "referenceSecond": 21.5,
+      "title": "输入自然语言", "chapter": "AI 实机",
+      "reference": "界面拆成有前后景的局部卡片，中间内容获得焦点。",
+      "zh": "转成 JPG，宽 1600 像素，保留原图。", "en": "Convert to JPG, 1600 px wide. Keep originals.",
+      "visual": "这句是实际输入文本。推近输入条并提交；英文版另录英文输入。请求在后续真实任务面板继续可见，给足阅读时间。",
+      "capture": ["C03-ZH", "C03-EN"], "motion": "只对真实录屏作推近与景深；附件截图不能用于伪造打字或提交状态。",
+      "sfx": "键盘与提交点击。", "gate": "提交到真实配置的模型；禁止用测试 fixture 或手工注入结果冒充 AI 调用。"
+    },
+    {
+      "id": "S08", "from": 690, "to": 879, "referenceSecond": 26,
+      "title": "上下文与计划", "chapter": "AI 实机",
+      "reference": "左侧产品列表，右侧黑蓝面板；状态逐项出现。",
+      "zh": "选中的文件，就是上下文。", "en": "Your selection is the context.",
+      "visual": "左侧保持 Finder 选区；右侧放真实 Fleqi 任务面板，经历规划中到待确认，能看到实际命令、输入和输出意图。",
+      "capture": ["C03-ZH", "C03-EN", "C04"], "motion": "保留左右分屏比例、中央分界和冷蓝背景；右侧 UI 保持原色，不套原片的黑色假状态框。",
+      "sfx": "轻分屏转场，真实状态落定声。", "gate": "只放 App 实际展示的信息；若计划无法精确列出影响，保留原有提示，不后期补画确定性清单。"
+    },
+    {
+      "id": "S09", "from": 879, "to": 939, "referenceSecond": 30,
+      "title": "执行由你确认", "chapter": "AI 实机",
+      "reference": "纯白字卡，蓝色括号强调一个关键词。",
+      "zh": "先看计划，再确认执行。", "en": "Review the plan. Then run it.",
+      "visual": "“确认执行”/“run it”以蓝色强调；继续使用默认 AI 策略的同一次任务。",
+      "capture": [], "motion": "词组依次出现，收束到下一镜头的真实确认按钮。",
+      "sfx": "文字揭示与短吸入。", "gate": "这是 AI 修改任务的默认流程，不暗示手动终端也有 AI 确认。"
+    },
+    {
+      "id": "S10", "from": 939, "to": 1005, "referenceSecond": 32,
+      "title": "确认按钮特写", "chapter": "AI 实机",
+      "reference": "长条元素从侧面放大穿入，再缩成中央小组件。",
+      "zh": "确认执行", "en": "Confirm and run",
+      "visual": "特写真实任务面板中的“确认执行”，鼠标点击，再拉回整个面板。英文标题位于画面外，不改按钮文字。",
+      "capture": ["C04"], "motion": "沿用条形元素的横向拉近与缩回；元素尺寸与位置来自真实界面。",
+      "sfx": "真实点击钉在按下帧。", "gate": "不复制参考片的 learning 进度条，也不凭空添加百分比。"
+    },
+    {
+      "id": "S11", "from": 1005, "to": 1194, "referenceSecond": 37,
+      "title": "结果真实落盘", "chapter": "AI 实机",
+      "reference": "中央小面板显示多行处理过程，最后完成状态替换。",
+      "zh": "处理完成，原图保留。", "en": "Converted. Originals kept.",
+      "visual": "前半显示同一任务真实运行与输出；后半切到 Finder 中新生成的两个 JPG，Quick Look 打开一个结果。字幕只在结果核验后出现。",
+      "capture": ["C05"], "motion": "保持原片中央主体与由过程到结果的替换；末尾结果至少清晰停留 1.5 秒。",
+      "sfx": "细小阶段声与完成落点。", "gate": "验证 JPG 可解码、宽度为 1600、两份原图哈希未变；不能仅凭 UI 成功字样通过。"
+    },
+    {
+      "id": "S12", "from": 1194, "to": 1269, "referenceSecond": 41,
+      "title": "从一次到常用", "chapter": "复用",
+      "reference": "进入深蓝场景，短句由大变小并补齐。",
+      "zh": "把常用操作，", "en": "Turn everyday tasks into",
+      "visual": "蓝黑弥散背景，短句在中心由大到小。",
+      "capture": [], "motion": "复刻深浅场景转换与字卡纵深。",
+      "sfx": "低频轻转场。", "gate": "只引出显式收藏，不宣称自动学习用户行为。"
+    },
+    {
+      "id": "S13", "from": 1269, "to": 1341, "referenceSecond": 43,
+      "title": "可复用的指令", "chapter": "复用",
+      "reference": "关键词被左右蓝色方括号夹住，随后向中心压缩退出。",
+      "zh": "[ 收藏，下次复用 ]", "en": "[ reusable favorites ]",
+      "visual": "蓝色括号只属于片中文字设计，下一镜直接落到 Fleqi 的真实收藏。",
+      "capture": [], "motion": "保留括号包围、文字保持、横向收束的顺序。",
+      "sfx": "克制括号落点。", "gate": "不写“越用越聪明”“永久学习”等缺少产品依据的承诺。"
+    },
+    {
+      "id": "S14", "from": 1341, "to": 1410, "referenceSecond": 46,
+      "title": "真实收藏复用", "chapter": "复用",
+      "reference": "返回产品列表，光标选择一个条目。",
+      "zh": "常用指令，随时调用。", "en": "Keep the tasks you use most.",
+      "visual": "展示实际能力库的收藏区，选择预先保存的“图片转 JPG · 1600px”，点击“复用”展开内容与当前目录。",
+      "capture": ["C06"], "motion": "轻斜视进入后回正阅读，光标只完成一次主操作。",
+      "sfx": "一次真实点击。", "gate": "收藏是显式保存的提示，不暗示这次任务被自动学会；复用重新绑定当前上下文。"
+    },
+    {
+      "id": "S15", "from": 1410, "to": 1494, "referenceSecond": 48,
+      "title": "复用收益", "chapter": "复用",
+      "reference": "大字从透视角度翻正，短暂清晰后失焦离开。",
+      "zh": "少打一遍，接着做。", "en": "Less retyping. Keep going.",
+      "visual": "沿用原片蓝黑字卡；不出现自动执行或免确认字样。",
+      "capture": [], "motion": "字卡轻倾斜回正，落定后停留，再柔焦退出。",
+      "sfx": "短转场风声。", "gate": "收藏减少重复输入，不替代权限与当前 AI 策略。"
+    },
+    {
+      "id": "S16", "from": 1494, "to": 1659, "referenceSecond": 54,
+      "title": "转向手动终端", "chapter": "终端实机",
+      "reference": "巨大的连接词之后，两张短字卡依次替换，关键词变蓝。",
+      "zh": "还有。 → 熟悉命令？ → 输入 !，直接执行。", "en": "And. → Know the command? → Start with !. Take control.",
+      "visual": "三句依次出现，不同屏堆叠。半角 ! 成为下一镜输入条的视觉接点。",
+      "capture": [], "motion": "保留巨词缩回、短句切换、单词蓝色强调。",
+      "sfx": "三个词组落点按原片视觉节奏安排。", "gate": "手动 ! 直通真实 PTY，与前半的 AI 规划路径明确区分。"
+    },
+    {
+      "id": "S17", "from": 1659, "to": 1722, "referenceSecond": 56,
+      "title": "! 切换模式", "chapter": "终端实机",
+      "reference": "一个小型真实菜单从中心展开。",
+      "zh": "同一条输入栏。", "en": "The same command bar.",
+      "visual": "裁取真实输入条，输入 !；文字变绿、手动终端标识出现。",
+      "capture": ["C07"], "motion": "沿用小主体展开的节奏，真实模式变化由 App 自己完成。",
+      "sfx": "单次按键拟音。", "gate": "保留颜色与文字双重标识；不后期绘制模式徽标。"
+    },
+    {
+      "id": "S18", "from": 1722, "to": 1812, "referenceSecond": 59,
+      "title": "真实终端展开", "chapter": "终端实机",
+      "reference": "菜单过渡到完整窗口，窗口在蓝白背景中斜向浮起。",
+      "zh": "一个真正的终端。", "en": "A real terminal.",
+      "visual": "点击实际终端入口，持续 PTY 面板展开，出现真实 shell 提示符。Finder、输入条和终端保持真实位置关系。",
+      "capture": ["C07"], "motion": "整组录屏作轻倾斜运镜；App 自身展开动画按原速保留。",
+      "sfx": "面板展开轻风声。", "gate": "真实 zsh 与可输入提示符；不把 AI 输出排成假的终端。"
+    },
+    {
+      "id": "S19", "from": 1812, "to": 1971, "referenceSecond": 62,
+      "title": "命令输入的微距", "chapter": "终端实机",
+      "reference": "表单输入区微距横移，逐字输入后拉回。",
+      "zh": "!ls -lh *.jpg", "en": "!ls -lh *.jpg",
+      "visual": "在同一演示目录的输入条真实输入命令并提交，列出刚生成的 JPG。中英两版均保留原始命令。",
+      "capture": ["C08"], "motion": "摄影式推近输入区、横移跟随文本、拉回到终端；以源采集分辨率限制最大放大。",
+      "sfx": "实际长度的键盘声与 Enter。", "gate": "命令由 Fleqi 去掉 ! 后发送 PTY；终端路径必须就是 Finder 演示目录。"
+    },
+    {
+      "id": "S20", "from": 1971, "to": 2160, "referenceSecond": 70,
+      "title": "输出可以核对", "chapter": "终端实机",
+      "reference": "三条内容逐层堆叠、局部对焦，背景表单保持。",
+      "zh": "目录、文件、结果，一目了然。", "en": "See the folder, files, and results.",
+      "visual": "真实终端先后执行 pwd、ls -lh *.jpg、file *.jpg。用真实输出的三个裁片依次前移，源终端仍在后方。末帧能核对两个输出文件及 1600px 宽度。",
+      "capture": ["C08"], "motion": "匹配三层内容堆叠节奏；裁片来自同一录制，不手打输出。",
+      "sfx": "三个轻落点，响度递减。", "gate": "目录与结果一致；输出如果含长用户名路径，优先在画面构图中避开，不伪造短路径。"
+    },
+    {
+      "id": "S21", "from": 2160, "to": 2244, "referenceSecond": 73,
+      "title": "用完收起", "chapter": "终端实机",
+      "reference": "保存按钮微距点击，再拉远退出。",
+      "zh": "用完，轻轻收起。", "en": "Tuck it away when you’re done.",
+      "visual": "特写实际终端面板收起按钮，点击后面板消失，Fleqi 输入条保留。",
+      "capture": ["C09"], "motion": "复用按钮特写到拉远的动作；按钮在真实左上角，镜头移动到按钮，不挪动 UI。",
+      "sfx": "真实点击加离场短风声。", "gate": "收起终端不等于结束会话；镜头不展示误导性的“已结束”。"
+    },
+    {
+      "id": "S22", "from": 2244, "to": 2310, "referenceSecond": 75,
+      "title": "能力范围总览", "chapter": "收束",
+      "reference": "完整工作流页面浮起，后方有一层页面残影。",
+      "zh": "日常文件操作，都有入口。", "en": "Everyday file tasks, within reach.",
+      "visual": "使用真实控制台概览，六类入口全景与浅景深。它是能力范围的短收束，不代替实际演示。",
+      "capture": ["C10"], "motion": "保留完整窗口倾斜入场与轻拉远；不把六块卡片改成不存在的悬浮仪表盘。",
+      "sfx": "轻窗口入场声。", "gate": "数量使用录制时真实目录，不将全部条目称为已完整验收。"
+    },
+    {
+      "id": "S23", "from": 2310, "to": 2358, "referenceSecond": 77.5,
+      "title": "三种能力合流", "chapter": "收束",
+      "reference": "界面退走，蓝白背景上的一句短宣言。",
+      "zh": "文件。AI。终端。", "en": "Files. AI. Terminal.",
+      "visual": "三词依次聚拢；不再加新功能或新 UI。",
+      "capture": [], "motion": "与原片页面离场连续，文字落定。",
+      "sfx": "轻收束。", "gate": "只总结刚刚演示的三项。"
+    },
+    {
+      "id": "S24", "from": 2358, "to": 2430, "referenceSecond": 80,
+      "title": "第一句品牌主张", "chapter": "收束",
+      "reference": "巨大黑字缩小进入白色中心。",
+      "zh": "选好文件。", "en": "Select your files.",
+      "visual": "黑字白心蓝边，镜头由近到远，句号落定。",
+      "capture": [], "motion": "继承原片大字缩小和停顿。",
+      "sfx": "一记文字落点。", "gate": "不延用原片对竞争产品的比较句。"
+    },
+    {
+      "id": "S25", "from": 2430, "to": 2502, "referenceSecond": 82,
+      "title": "第二句品牌主张", "chapter": "收束",
+      "reference": "蓝色主张句取代黑字，中心亮区扩散。",
+      "zh": "说一句，开始做。", "en": "Say it. Get it done.",
+      "visual": "品牌蓝强调动词，亮区保持原片层次。",
+      "capture": [], "motion": "文字替换与轻推近，避免额外震屏。",
+      "sfx": "品牌强调落点。", "gate": "此前已交代真实确认步骤；不承诺所有任务一次成功。"
+    },
+    {
+      "id": "S26", "from": 2502, "to": 2604, "referenceSecond": 85,
+      "title": "品牌落版", "chapter": "收束",
+      "reference": "居中图标先出现，再逐字形成品牌名称。",
+      "zh": "Fleqi", "en": "Fleqi",
+      "visual": "真实 App 图标与 Fleqi 字标居中；完整品牌至少停留 1.2 秒。",
+      "capture": ["A01"], "motion": "保持图标大小、水平关系和字标揭示方式接近原片。",
+      "sfx": "短品牌落点，自然余韵。", "gate": "保持正式图标原有蓝色和细节，不由 AI 重绘。"
+    },
+    {
+      "id": "S27", "from": 2604, "to": 2694, "referenceSecond": 88,
+      "title": "最终定位", "chapter": "收束",
+      "reference": "黑底打字定位句，少量边缘蓝光。",
+      "zh": "你的 Finder，行动起来。", "en": "Put your Finder to work.",
+      "visual": "黑底居中文字与打字光标，蓝光只保留在边缘。",
+      "capture": [], "motion": "保留原片打字与退格节奏；最终读完才切 CTA。",
+      "sfx": "轻键盘声，配乐开始退场。", "gate": "强调 Finder 工作流，不写原片的自动学习定位。"
+    },
+    {
+      "id": "S28", "from": 2694, "to": 2796, "referenceSecond": 91,
+      "title": "开源入口", "chapter": "收束",
+      "reference": "黑蓝背景上的 CTA，底部小网址。",
+      "zh": "探索 Fleqi\n开源 · 自选模型", "en": "Explore Fleqi\nOpen source · Bring your own model",
+      "visual": "主 CTA 居中，底部 github.com/Fleqi-App/fleqi；采用原片的留白和小网址位置。",
+      "capture": [], "motion": "轻打字形成 CTA，尾段渐暗；不展示未经核实的发行版本号。",
+      "sfx": "配乐淡出，避免突断。", "gate": "仓库地址已核对本地 origin；发布前核查公开入口。无订阅或免费试用文案。"
+    },
+    {
+      "id": "S29", "from": 2796, "to": 2858, "referenceSecond": 94,
+      "title": "余韵与黑场", "chapter": "收束",
+      "reference": "CTA 淡出后进入黑场。",
+      "zh": "", "en": "",
+      "visual": "字幕、蓝光与音轨一同收干净。",
+      "capture": [], "motion": "保留原片结束呼吸与黑场，实际输出总长 2858 帧。",
+      "sfx": "短余韵归零。", "gate": "无残留一帧文字、参考片品牌或平台水印。"
+    }
+  ]
+}

@@ -1,0 +1,22 @@
+:root {
+  --font-ui: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  --font-sans: var(--font-ui); --font-mono: var(--font-ui);
+  --motion-curve: cubic-bezier(.2,.8,.2,1);
+  --motion-feedback: .14s; --motion-menu: .22s; --motion-layout: .28s; --motion-window: .32s;
+}
+html, body, button, input, textarea, select, code, kbd, [data-slot] { font-family: var(--font-ui); }
+body { font-size: 14px; line-height: 1.5; }
+code, kbd, .tabular-nums { font-variant-numeric: tabular-nums; }
+button, input, select, [role='option'] { transition-property: background-color, color, border-color, box-shadow, opacity; transition-duration: var(--motion-feedback); transition-timing-function: var(--motion-curve); }
+button:active:not(:disabled) { scale: .97; }
+[data-slot='switch'], [data-slot='switch-thumb'] { transition-duration: var(--motion-menu); transition-timing-function: var(--motion-curve); }
+[data-slot='switch-thumb'] { transition-property: translate, transform, background-color; }
+[data-slot='select-trigger'] > svg { transition: rotate var(--motion-menu) var(--motion-curve); }
+[data-slot='select-trigger'][data-state='open'] > svg { rotate: 180deg; }
+[data-slot='select-content'] { --pop-y: -6px; opacity: 1; transform: none; transform-origin: var(--radix-select-content-transform-origin); transition: opacity var(--motion-menu) var(--motion-curve), transform var(--motion-menu) var(--motion-curve); }
+@starting-style { [data-slot='select-content'] { opacity: 0; transform: translateY(var(--pop-y)) scale(.96); } }
+[data-slot='select-content'][data-state='closed'] { opacity: 0; transform: translateY(var(--pop-y)) scale(.96); pointer-events: none; animation: fleqi-presence var(--motion-menu) var(--motion-curve); }
+@keyframes fleqi-presence { from { visibility: visible; } to { visibility: visible; } }
+.motion-size { min-width: 0; overflow: hidden; }
+.motion-size-content { display: flow-root; min-width: 0; }
+@media (prefers-reduced-motion: reduce) { button:active:not(:disabled) { scale: 1; } }

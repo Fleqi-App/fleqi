@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-09-17",
+  "purpose": "P0 打包所需的 App 图标派生文件（Icon/README.md §3 生成记录）。M5 再按 Finder/Dock/关于页复核；菜单栏 template 图标与页面语义图标另行登记，不在本清单。",
+  "source": {
+    "path": "Icon/exports/Fleqi-iOS-Default-1024@1x.png",
+    "sha256": "e4abce9e8734b5f9ddbe662010007e44105e3a698fabe706887c3e9428580dcf",
+    "bytes": 1479239,
+    "note": "Default 母版，1024×1024 RGBA；与 Icon/Windows、Icon/Linux 的 Fleqi-1024.png 逐字节一致"
+  },
+  "tool": {
+    "name": "@tauri-apps/cli (tauri icon)",
+    "version": "2.11.4",
+    "command": "tauri icon <source> -o resources/icons",
+    "removed": ["android/", "ios/", "Square*Logo.png", "StoreLogo.png"],
+    "removedReason": "移动端与 Windows Store 资源不在 macOS 首发范围；Windows/Linux 里程碑另按各自尺寸集生成"
+  },
+  "outputs": [
+    { "file": "32x32.png", "bytes": 1846, "sha256": "22a0bc36d8809ad0c6cafdff71b2dfe51e33e9bab5ed4cf5fbc4d81a5d5beff0", "platform": "linux/windows", "use": "bundle icon" },
+    { "file": "64x64.png", "bytes": 4423, "sha256": "c886829f3773e34596a242ce252e8eca2c956e3582b2fb741e49196da8dd760a", "platform": "linux/windows", "use": "bundle icon" },
+    { "file": "128x128.png", "bytes": 11489, "sha256": "cb99dfc8c4ca85262f4bb05a0f0bf419d46fce7e0ac3b01515984c148773c593", "platform": "linux/windows", "use": "bundle icon" },
+    { "file": "128x128@2x.png", "bytes": 30781, "sha256": "9c130fa89734ce4363aa9e03c24bc81ee1b15b37d38aa886df3a0a858100513e", "platform": "linux/windows", "use": "bundle icon" },
+    { "file": "icon.png", "bytes": 95753, "sha256": "f6d7e2cc90e43a73b053a58110f02837dbf9b43dc03ef42335e149538d0d3b68", "platform": "linux", "use": "512×512 bundle icon" },
+    { "file": "icon.ico", "bytes": 42433, "sha256": "f7a87a98a47e3cd53b8ba645b203c8eadc5f8a942dadaa8c31a2670dcb8322be", "platform": "windows", "use": "多尺寸 ICO（Windows 里程碑再按 Icon/README 尺寸集复核）" },
+    { "file": "icon.icns", "bytes": 574230, "sha256": "ca19d5ce58a8048cc44bf5633d0f05942376387f5cda447f3cb2072d2d056079", "platform": "macos", "use": "App 图标（CFBundleIconFile）" }
+  ]
+}

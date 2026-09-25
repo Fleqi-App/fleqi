@@ -1,0 +1,35 @@
+name: Source checks
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  contracts-and-ui:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 26.8.1
+      - run: npm install --global pnpm@10.33.4
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm check:docs && pnpm check:traceability && pnpm check:references && pnpm check:boundaries
+      - run: pnpm typecheck
+      - run: pnpm --filter @fleqi/ui run test:unit
+      - run: pnpm build
+
+  rust-core:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.98.0
+        with:
+          components: rustfmt, clippy
+      - run: cargo fmt --all --check
+      - run: cargo test --locked -p fleqi-domain -p fleqi-application
+      - run: cargo check --locked -p fleqi-desktop

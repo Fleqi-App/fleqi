@@ -1,0 +1,24 @@
+{
+  "identifier": "app.fleqi.desktop.tests",
+  "$schema": "https://schema.tauri.app/config/2",
+  "app": {
+    "security": {
+      "capabilities": [
+        "bootstrap",
+        {
+          "identifier": "desktop-test",
+          "description": "原生测试构建：内嵌 WebDriver 服务的 ACL 清单，仅随 --features desktop-test 与本配置启用；普通包不含。",
+          "windows": [
+            "console",
+            "settings",
+            "composer"
+          ],
+          "permissions": [
+            "wdio-webdriver:default",
+            "core:window:allow-set-focus"
+          ]
+        }
+      ]
+    }
+  }
+}
