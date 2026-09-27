@@ -16,7 +16,7 @@
 <p align="center">
   <a href="https://github.com/Fleqi-App/fleqi/releases/tag/v0.0.2"><strong>Download</strong></a>
   &nbsp;·&nbsp;
-  <a href="README_EN.md">English</a>
+  <a href="README.md">English</a>
   &nbsp;/&nbsp;
   <a href="README_CH.md">中文</a>
   &nbsp;·&nbsp;
@@ -88,7 +88,7 @@ Target the `main` branch. When committing or opening a PR against `main`, includ
 
 | Change | Required content |
 |---|---|
-| README copy | Update `README_CH.md` and `README_EN.md` together, and keep the language links in `README.md` working. Do not restore a project status section; link to the [progress record](docs/status.md) instead. |
+| README copy | Keep the full English content in `README.md` and `README_EN.md` identical, and update `README_CH.md` alongside them. Do not restore a project status section; link to the [progress record](docs/status.md) instead. |
 | Product behavior or UI | Update the affected [requirements, capability, UI, architecture, and acceptance documents](docs/README.md) together; keep IDs, defaults, and references consistent. |
 | App implementation or Rust DTO | Commit the source and describe appropriate verification results in the PR. For DTO changes, run `pnpm contracts:regen` and commit the [generated TypeScript bindings](packages/contracts/src/bindings/) too. |
 | Images, references, or release information | Link only to committed, accessible assets. Update the [icon provenance record](resources/icons/MANIFEST.json) with derived icons, and align release claims with the [release guide](docs/releasing.md) and [progress record](docs/status.md). |

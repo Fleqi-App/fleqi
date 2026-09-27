@@ -16,7 +16,7 @@
 <p align="center">
   <a href="https://github.com/Fleqi-App/fleqi/releases/tag/v0.0.2"><strong>下载</strong></a>
   &nbsp;·&nbsp;
-  <a href="README_EN.md">English</a>
+  <a href="README.md">English</a>
   &nbsp;/&nbsp;
   <a href="README_CH.md">中文</a>
   &nbsp;·&nbsp;
@@ -88,7 +88,7 @@ pnpm tauri dev
 
 | 改动 | 提交内容 |
 |---|---|
-| README 文案 | 同步更新 `README_CH.md` 与 `README_EN.md`，保持 `README.md` 的双语入口可用；不恢复项目状态章节，进度只链接到[当前状态](docs/status.md)。 |
+| README 文案 | 保持 `README.md` 与 `README_EN.md` 的完整英文正文一致，并同步更新 `README_CH.md`；不恢复项目状态章节，进度只链接到[当前状态](docs/status.md)。 |
 | 产品行为或界面 | 同步受影响的[需求、能力、UI、架构与验收文档](docs/README.md)，保持 ID、默认值和引用一致。 |
 | App 实现或 Rust DTO | 提交对应源码，并在 PR 中说明相称的验证结果；DTO 变化时运行 `pnpm contracts:regen`，一并提交[生成的 TypeScript 绑定](packages/contracts/src/bindings/)。 |
 | 图片、参考资料或发行信息 | 只引用已入库、可访问的图片与资料；图标派生文件同步[来源记录](resources/icons/MANIFEST.json)，版本与发行事实同步[发布文档](docs/releasing.md)及[当前进度](docs/status.md)。 |
