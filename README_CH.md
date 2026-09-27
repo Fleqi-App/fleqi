@@ -1,14 +1,48 @@
-<div align="center">
-  <img src="resources/icons/128x128@2x.png" width="132" alt="Fleqi 应用图标" />
-</div>
+<p align="center">
+  <img src="resources/icons/128x128@2x.png" width="128" height="128" alt="Fleqi 应用图标" />
+</p>
 
-# Fleqi
+<h1 align="center">Fleqi</h1>
 
-**贴近 Finder 的开源桌面命令助手。** Fleqi 在当前 Finder 文件夹和选中项的上下文中处理自然语言请求、手动命令与持续交互终端。日常入口是输入条；工作区用于查看会话、任务、能力与设置。用户自行配置模型 API 或本地服务，无需 Fleqi 账号或订阅。
+<p align="center">
+  <strong>贴近 Finder 的开源 macOS 桌面命令助手</strong>
+</p>
 
-[English](README_EN.md) · [语言入口](README.md)
+<p align="center">
+  在当前 Finder 文件夹和选中项中，用自然语言、<code>!</code> 手动命令<br />
+  和持续交互终端完成任务。
+</p>
 
-[下载 0.0.2 Beta（macOS 14+，Apple Silicon）](https://github.com/Fleqi-App/fleqi/releases/tag/v0.0.2) · [更新说明](docs/release-notes/0.0.2.md) · [当前进度与验收](docs/status.md)
+<p align="center">
+  <a href="https://github.com/Fleqi-App/fleqi/releases/tag/v0.0.2"><strong>下载</strong></a>
+  &nbsp;·&nbsp;
+  <a href="README.md">English</a>
+  &nbsp;/&nbsp;
+  <a href="README_CH.md">中文</a>
+  &nbsp;·&nbsp;
+  <a href="docs/README.md">开发文档</a>
+</p>
+
+<p align="center">
+  <a href="https://github.com/Fleqi-App/fleqi/releases/tag/v0.0.2"><img alt="0.0.2 Beta 发布版" src="https://img.shields.io/badge/release-0.0.2_Beta-2c5282?style=flat-square" /></a>
+  <a href="LICENSE"><img alt="AGPL-3.0-only 许可" src="https://img.shields.io/badge/license-AGPL--3.0--only-2f855a?style=flat-square" /></a>
+  <a href="https://github.com/Fleqi-App/fleqi/stargazers"><img alt="GitHub 星标" src="https://img.shields.io/github/stars/Fleqi-App/fleqi?style=flat-square&color=805ad5" /></a>
+</p>
+
+<p align="center">
+  <img alt="macOS 14 或更新版本" src="https://img.shields.io/badge/macOS-14%2B-1f425f?style=flat-square&logo=apple&logoColor=white" />
+  <img alt="Apple Silicon" src="https://img.shields.io/badge/Apple_Silicon-supported-555555?style=flat-square&logo=apple&logoColor=white" />
+  <img alt="Windows 后续版本" src="https://img.shields.io/badge/Windows-planned-0078d4?style=flat-square&logo=windows&logoColor=white" />
+  <img alt="Linux 后续版本" src="https://img.shields.io/badge/Linux-planned-fcc624?style=flat-square&logo=linux&logoColor=black" />
+</p>
+
+<p align="center">
+  <img alt="Tauri 2" src="https://img.shields.io/badge/Tauri-2-24c8db?style=flat-square&logo=tauri&logoColor=white" />
+  <img alt="Rust 2024" src="https://img.shields.io/badge/Rust-2024-ce422b?style=flat-square&logo=rust&logoColor=white" />
+  <img alt="React 19" src="https://img.shields.io/badge/React-19-149eca?style=flat-square&logo=react&logoColor=white" />
+</p>
+
+输入条是日常入口，工作区用于查看会话、任务、能力与设置。用户自行配置模型 API 或本地服务，无需 Fleqi 账号或订阅。版本细节见[更新说明](docs/release-notes/0.0.2.md)和[当前进度与验收](docs/status.md)。
 
 ## 可以做什么
 
@@ -54,7 +88,7 @@ pnpm tauri dev
 
 | 改动 | 提交内容 |
 |---|---|
-| README 文案 | 同步更新 `README_CH.md` 与 `README_EN.md`，保持 `README.md` 的双语入口可用；不恢复项目状态章节，进度只链接到[当前状态](docs/status.md)。 |
+| README 文案 | 保持 `README.md` 与 `README_EN.md` 的完整英文正文一致，并同步更新 `README_CH.md`；不恢复项目状态章节，进度只链接到[当前状态](docs/status.md)。 |
 | 产品行为或界面 | 同步受影响的[需求、能力、UI、架构与验收文档](docs/README.md)，保持 ID、默认值和引用一致。 |
 | App 实现或 Rust DTO | 提交对应源码，并在 PR 中说明相称的验证结果；DTO 变化时运行 `pnpm contracts:regen`，一并提交[生成的 TypeScript 绑定](packages/contracts/src/bindings/)。 |
 | 图片、参考资料或发行信息 | 只引用已入库、可访问的图片与资料；图标派生文件同步[来源记录](resources/icons/MANIFEST.json)，版本与发行事实同步[发布文档](docs/releasing.md)及[当前进度](docs/status.md)。 |
