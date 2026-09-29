@@ -16,6 +16,8 @@ pub(crate) fn executable_paths(inherited: &OsStr) -> Vec<PathBuf> {
             "/usr/sbin",
             "/sbin",
         ]
+    } else if cfg!(target_os = "linux") {
+        vec!["/usr/local/bin", "/usr/bin", "/bin"]
     } else {
         Vec::new()
     };
@@ -37,6 +39,7 @@ pub(crate) fn executable_path(inherited: &OsStr) -> OsString {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(target_os = "macos")]
     use super::*;
 
     #[test]

@@ -343,23 +343,13 @@ impl FileCapabilities {
         Ok(BatchReport::from_items(items))
     }
 
-    /// CAP-FILE-008：移入回收站（macOS Finder Apple Events），可恢复（AC-CAP-008）。
+    /// CAP-FILE-008：移入回收站，可恢复（AC-CAP-008）。
+    /// macOS 使用 Finder；Linux 使用 FreeDesktop Trash；Windows 使用资源管理器回收站。
     pub fn trash(&self, sources: Vec<PathBuf>) -> TrashReport {
         let mut report = TrashReport::default();
         for source in sources {
-            // AppleScript 固定脚本：路径以 POSIX file 传递，不拼接用户路径到脚本字符串。
-            let script = format!(
-                "tell application \"Finder\" to delete (POSIX file \"{}\" as alias)",
-                source
-                    .to_string_lossy()
-                    .replace('\\', "\\\\")
-                    .replace('"', "\\\"")
-            );
-            let status = std::process::Command::new("/usr/bin/osascript")
-                .arg("-e")
-                .arg(&script)
-                .output();
-            let ok = matches!(&status, Ok(output) if output.status.success());
+            let status = move_to_trash(&source);
+            let ok = status.is_ok();
             report.items.push(ItemResult {
                 source: source.clone(),
                 destination: None,
@@ -375,17 +365,7 @@ impl FileCapabilities {
                     report.restore_paths.push(trash_path.clone());
                 }
             } else {
-                let message = match &status {
-                    Err(e) => Some(e.to_string()),
-                    Ok(output) => {
-                        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_owned();
-                        Some(if stderr.is_empty() {
-                            "Finder 删除被拒绝（权限/不存在）".into()
-                        } else {
-                            stderr
-                        })
-                    }
-                };
+                let message = status.err();
                 if let Some(item) = report.items.last_mut() {
                     item.message = message;
                 }
@@ -397,20 +377,25 @@ impl FileCapabilities {
         report
     }
 
-    /// 在 ~/.Trash 中定位刚被删除的条目：同名且最近修改优先。
+    /// 在平台回收站中定位刚被删除的条目：同名且最近修改优先。
     fn locate_in_trash(original: &Path) -> Option<PathBuf> {
-        let home = std::env::var("HOME").ok()?;
         let name = original.file_name()?.to_str()?.to_owned();
-        let trash = Path::new(&home).join(".Trash");
         let mut best: Option<(std::time::SystemTime, PathBuf)> = None;
-        for entry in std::fs::read_dir(&trash).ok()?.flatten() {
-            let path = entry.path();
-            if path.file_name()?.to_str()? != name {
+        for trash in trash_lookup_dirs() {
+            let Ok(entries) = std::fs::read_dir(&trash) else {
                 continue;
-            }
-            let modified = entry.metadata().and_then(|m| m.modified()).ok()?;
-            if best.as_ref().map(|(t, _)| modified > *t).unwrap_or(true) {
-                best = Some((modified, path));
+            };
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.file_name().and_then(|n| n.to_str()) != Some(name.as_str()) {
+                    continue;
+                }
+                let Ok(modified) = entry.metadata().and_then(|m| m.modified()) else {
+                    continue;
+                };
+                if best.as_ref().map(|(t, _)| modified > *t).unwrap_or(true) {
+                    best = Some((modified, path));
+                }
             }
         }
         best.map(|(_, path)| path)
@@ -434,7 +419,17 @@ impl FileCapabilities {
         std::fs::create_dir_all(parent).map_err(|e| CapabilityError::Failed(e.to_string()))?;
         let target = unique_destination(parent, original);
         std::fs::rename(restore_path, &target)
-            .map_err(|e| CapabilityError::Failed(format!("恢复失败：{e}")))
+            .map_err(|e| CapabilityError::Failed(format!("恢复失败：{e}")))?;
+        if let (Some(name), Some(files)) = (restore_path.file_name(), restore_path.parent())
+            && files.ends_with("files")
+            && let Some(root) = files.parent()
+        {
+            let info = root
+                .join("info")
+                .join(format!("{}.trashinfo", name.to_string_lossy()));
+            let _ = std::fs::remove_file(info);
+        }
+        Ok(())
     }
 
     // ---------- ZIP（CAP-ZIP-001..003） ----------
@@ -1372,4 +1367,196 @@ fn extract_paragraphs(xml: &str) -> String {
         }
     }
     lines.join("\n")
+}
+
+fn move_to_trash(source: &Path) -> Result<(), String> {
+    if !source.exists() {
+        return Err(format!("找不到 {}", source.display()));
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let script = format!(
+            "tell application \"Finder\" to delete (POSIX file \"{}\" as alias)",
+            source
+                .to_string_lossy()
+                .replace('\\', "\\\\")
+                .replace('"', "\\\"")
+        );
+        let output = std::process::Command::new("/usr/bin/osascript")
+            .arg("-e")
+            .arg(&script)
+            .output()
+            .map_err(|error| error.to_string())?;
+        if output.status.success() {
+            return Ok(());
+        }
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_owned();
+        return Err(if stderr.is_empty() {
+            "Finder 删除被拒绝（权限/不存在）".into()
+        } else {
+            stderr
+        });
+    }
+    #[cfg(target_os = "linux")]
+    {
+        freedesktop_trash(source)
+    }
+    #[cfg(target_os = "windows")]
+    {
+        return windows_recycle(source);
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
+    {
+        let _ = source;
+        Err("当前平台没有回收站适配".into())
+    }
+}
+
+fn trash_lookup_dirs() -> Vec<PathBuf> {
+    let mut dirs = Vec::new();
+    if let Ok(home) = std::env::var("HOME") {
+        let home = PathBuf::from(home);
+        dirs.push(home.join(".Trash"));
+        let data = std::env::var_os("XDG_DATA_HOME")
+            .map(PathBuf::from)
+            .filter(|path| path.is_absolute())
+            .unwrap_or_else(|| home.join(".local/share"));
+        dirs.push(data.join("Trash").join("files"));
+    }
+    dirs
+}
+
+#[cfg(target_os = "linux")]
+fn freedesktop_trash(source: &Path) -> Result<(), String> {
+    let home = std::env::var("HOME").map_err(|_| "没有 HOME，无法使用回收站".to_owned())?;
+    let data = std::env::var_os("XDG_DATA_HOME")
+        .map(PathBuf::from)
+        .filter(|path| path.is_absolute())
+        .unwrap_or_else(|| PathBuf::from(home).join(".local/share"));
+    let files = data.join("Trash").join("files");
+    let info = data.join("Trash").join("info");
+    std::fs::create_dir_all(&files).map_err(|error| error.to_string())?;
+    std::fs::create_dir_all(&info).map_err(|error| error.to_string())?;
+    let original = source
+        .canonicalize()
+        .map_err(|error| format!("无法解析回收站路径：{error}"))?;
+    let base = original
+        .file_name()
+        .ok_or("回收站项目没有文件名")?
+        .to_string_lossy()
+        .into_owned();
+    if base.contains(['/', '\\']) || base.contains('\0') {
+        return Err("文件名不能进入回收站".into());
+    }
+    let mut name = base.clone();
+    let mut index = 1u32;
+    while files.join(&name).exists() || info.join(format!("{name}.trashinfo")).exists() {
+        name = format!("{base}-{index}");
+        index += 1;
+        if index > 1000 {
+            return Err("回收站中同名项目过多".into());
+        }
+    }
+    let destination = files.join(&name);
+    if std::fs::rename(&original, &destination).is_err() {
+        return Err(format!(
+            "无法把 {} 移入回收站（可能不在同一文件系统）",
+            original.display()
+        ));
+    }
+    let path_text = original.to_string_lossy();
+    if path_text.contains(['\n', '\r']) {
+        let _ = std::fs::rename(&destination, &original);
+        return Err("路径含换行，已保留原文件".into());
+    }
+    let body = format!(
+        "[Trash Info]\nPath={path_text}\nDeletionDate={}\n",
+        utc_stamp()
+    );
+    if let Err(error) = std::fs::write(info.join(format!("{name}.trashinfo")), body) {
+        let _ = std::fs::rename(&destination, &original);
+        return Err(format!("无法写入回收站信息：{error}"));
+    }
+    Ok(())
+}
+
+#[cfg(target_os = "windows")]
+fn windows_recycle(source: &Path) -> Result<(), String> {
+    let path = source
+        .canonicalize()
+        .map_err(|error| format!("无法解析回收站路径：{error}"))?;
+    // The script is a constant. The path arrives only as an environment variable.
+    let mut child = std::process::Command::new("powershell.exe")
+        .args(["-NoProfile", "-NonInteractive", "-Command", "-"])
+        .env("FLEQI_TRASH_PATH", &path)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .map_err(|error| format!("无法启动资源管理器回收站：{error}"))?;
+    if let Some(mut stdin) = child.stdin.take() {
+        use std::io::Write;
+        stdin
+            .write_all(WINDOWS_RECYCLE_SCRIPT.as_bytes())
+            .map_err(|error| error.to_string())?;
+    }
+    let output = child
+        .wait_with_output()
+        .map_err(|error| error.to_string())?;
+    if output.status.success() {
+        Ok(())
+    } else {
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_owned();
+        Err(if stderr.is_empty() {
+            "资源管理器回收站拒绝了这项操作".into()
+        } else {
+            stderr
+        })
+    }
+}
+
+#[cfg(target_os = "windows")]
+const WINDOWS_RECYCLE_SCRIPT: &str = r#"
+$ErrorActionPreference = 'Stop'
+$path = $env:FLEQI_TRASH_PATH
+if (-not $path) { throw 'missing path' }
+Add-Type -AssemblyName Microsoft.VisualBasic
+if (Test-Path -LiteralPath $path -PathType Container) {
+  [Microsoft.VisualBasic.FileIO.FileSystem]::DeleteDirectory($path,'OnlyErrorDialogs','SendToRecycleBin')
+} else {
+  [Microsoft.VisualBasic.FileIO.FileSystem]::DeleteFile($path,'OnlyErrorDialogs','SendToRecycleBin')
+}
+exit 0
+"#;
+
+#[cfg(target_os = "linux")]
+fn utc_stamp() -> String {
+    let secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_secs())
+        .unwrap_or(0);
+    let days = (secs / 86_400) as i64;
+    let tod = secs % 86_400;
+    let (year, month, day) = civil_from_days(days);
+    format!(
+        "{year:04}-{month:02}-{day:02}T{:02}:{:02}:{:02}",
+        tod / 3600,
+        (tod % 3600) / 60,
+        tod % 60
+    )
+}
+
+#[cfg(target_os = "linux")]
+fn civil_from_days(days: i64) -> (i32, u32, u32) {
+    let z = days + 719_468;
+    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
+    let doe = (z - era * 146_097) as u64;
+    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146_096) / 365;
+    let y = yoe as i64 + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = if m <= 2 { y + 1 } else { y };
+    (y as i32, m as u32, d as u32)
 }

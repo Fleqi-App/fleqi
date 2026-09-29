@@ -13,7 +13,9 @@ use fleqi_application::lifecycle::HostLifecycle;
 use fleqi_application::paths::PathRegistry;
 use fleqi_application::permission_service::PermissionService;
 use fleqi_application::platform_caps::derive_capabilities;
-use fleqi_application::ports::{EventSink, SessionStore, StorageError, SystemClock, ThreadSpawner};
+use fleqi_application::ports::{
+    CredentialPort, EventSink, SessionStore, StorageError, SystemClock, ThreadSpawner,
+};
 use fleqi_application::session_service::SessionService;
 use fleqi_application::settings_service::SettingsService;
 use fleqi_application::surface_service::{SurfaceDeps, SurfaceService};
@@ -21,10 +23,41 @@ use fleqi_application::terminal_service::TerminalService;
 use fleqi_domain::lifecycle::HostState;
 use fleqi_domain::revision::Revision;
 use fleqi_domain::settings::FieldAllowlist;
+use fleqi_platform::credentials::self_test;
+use fleqi_platform::scheduling::MainThreadExecutor;
+
+#[cfg(target_os = "linux")]
+use fleqi_platform::linux::context::LinuxContextPort;
+#[cfg(target_os = "linux")]
+use fleqi_platform::linux::credentials::LinuxCredentials;
+#[cfg(target_os = "linux")]
+use fleqi_platform::linux::permissions::LinuxPermissions;
+#[cfg(target_os = "macos")]
 use fleqi_platform::macos::finder::MacContextPort;
-use fleqi_platform::macos::keychain::self_test;
+#[cfg(target_os = "macos")]
+use fleqi_platform::macos::keychain::KeychainCredentials;
+#[cfg(target_os = "macos")]
 use fleqi_platform::macos::permissions::MacPermissions;
-use fleqi_platform::macos::picker::MainThreadExecutor;
+#[cfg(target_os = "windows")]
+use fleqi_platform::windows::context::WindowsContextPort;
+#[cfg(target_os = "windows")]
+use fleqi_platform::windows::credentials::WindowsCredentials;
+#[cfg(target_os = "windows")]
+use fleqi_platform::windows::permissions::WindowsPermissions;
+
+#[cfg(target_os = "macos")]
+type ActivationObserver = fleqi_platform::macos::observer::FinderActivationObserver;
+#[cfg(target_os = "linux")]
+type ActivationObserver = fleqi_platform::linux::observer::FileManagerActivationObserver;
+#[cfg(target_os = "windows")]
+type ActivationObserver = fleqi_platform::windows::observer::FileManagerActivationObserver;
+
+#[cfg(target_os = "macos")]
+type PlatformPermissions = MacPermissions;
+#[cfg(target_os = "linux")]
+type PlatformPermissions = LinuxPermissions;
+#[cfg(target_os = "windows")]
+type PlatformPermissions = WindowsPermissions;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -85,7 +118,7 @@ pub struct AppState {
     pub terminal: Arc<TerminalService>,
     pub surface: Arc<SurfaceService>,
     /// Finder 激活观察：Finder 激活（去抖）→ 上下文刷新 → 显示状态机重估。
-    pub finder_observer: Arc<fleqi_platform::macos::observer::FinderActivationObserver>,
+    pub finder_observer: Arc<ActivationObserver>,
     pub runs: Arc<fleqi_application::run_service::RunService>,
     pub collections: std::sync::Arc<fleqi_application::collection_service::CollectionService>,
     /// 工具设施（M3.3）：探测/受管安装/所有权卸载。
@@ -95,7 +128,7 @@ pub struct AppState {
     /// 规划闭环（M3.2）：模型 → 计划 → RunService。
     pub planning: std::sync::Arc<fleqi_application::planning_service::PlanningService>,
     /// Keychain 端口（自检与端点密钥共用；密钥不回前端）。
-    pub keychain: Arc<fleqi_platform::macos::keychain::KeychainCredentials>,
+    pub keychain: Arc<dyn CredentialPort>,
     /// 当前生效的全局快捷键（宿主注册成功后才写入）。
     pub hotkey: Mutex<Option<String>>,
     pub hotkey_down: AtomicBool,
@@ -174,9 +207,9 @@ impl AppState {
         );
 
         #[cfg(feature = "desktop-test")]
-        let mac_permissions = Arc::new(MacPermissions::default());
+        let mac_permissions = Arc::new(PlatformPermissions::default());
         #[cfg(not(feature = "desktop-test"))]
-        let mac_permissions = Arc::new(MacPermissions::for_installed_build(&data_dir));
+        let mac_permissions = Arc::new(PlatformPermissions::for_installed_build(&data_dir));
         if let Some(error) = mac_permissions.reset_error() {
             logger.log(
                 "warn",
@@ -194,7 +227,12 @@ impl AppState {
         let main_thread: Arc<dyn MainThreadExecutor> = Arc::new(TauriMainThread {
             handle: handle.clone(),
         });
+        #[cfg(target_os = "macos")]
         let context_port = Arc::new(MacContextPort::new(mac_permissions, main_thread));
+        #[cfg(target_os = "linux")]
+        let context_port = Arc::new(LinuxContextPort::new(main_thread));
+        #[cfg(target_os = "windows")]
+        let context_port = Arc::new(WindowsContextPort::new(main_thread));
         let paths = Arc::new(PathRegistry::new());
         let context = Arc::new(ContextService::new(
             context_port,
@@ -250,24 +288,22 @@ impl AppState {
         // Finder 激活 → 刷新上下文并路由到显示状态机（followFinder 自动显示）。
         // 与手动刷新共用 refresh_context_routed 管线；state 在 manage 后可用。
         let app_for_observer = handle.clone();
-        let finder_observer = fleqi_platform::macos::observer::FinderActivationObserver::new(
-            Box::new(move |finder_active| {
-                if let Some(state) = app_for_observer.try_state::<Arc<AppState>>() {
-                    if finder_active {
-                        let state = Arc::clone(&state);
-                        let app = app_for_observer.clone();
-                        std::thread::spawn(move || {
-                            let snapshot = state.refresh_context_routed(&app);
-                            if crate::windows::finder_interaction_active(&app) {
-                                state.surface.on_context_changed(&snapshot);
-                            }
-                        });
-                    } else {
-                        state.surface.system_hide();
-                    }
+        let finder_observer = ActivationObserver::new(Box::new(move |finder_active| {
+            if let Some(state) = app_for_observer.try_state::<Arc<AppState>>() {
+                if finder_active {
+                    let state = Arc::clone(&state);
+                    let app = app_for_observer.clone();
+                    std::thread::spawn(move || {
+                        let snapshot = state.refresh_context_routed(&app);
+                        if crate::windows::finder_interaction_active(&app) {
+                            state.surface.on_context_changed(&snapshot);
+                        }
+                    });
+                } else {
+                    state.surface.system_hide();
                 }
-            }),
-        );
+            }
+        }));
         let surface = SurfaceService::new(
             &settings.snapshot().settings,
             false,
@@ -406,9 +442,15 @@ impl AppState {
             })
         }))?;
         // M3.2：模型端点 + 规划闭环（模型 → 计划 → RunService；密钥只在 Rust 侧转发）。
-        let keychain: Arc<fleqi_platform::macos::keychain::KeychainCredentials> = Arc::new(
-            fleqi_platform::macos::keychain::KeychainCredentials::new(CREDENTIAL_NAMESPACE),
-        );
+        #[cfg(target_os = "macos")]
+        let keychain: Arc<dyn CredentialPort> =
+            Arc::new(KeychainCredentials::new(CREDENTIAL_NAMESPACE));
+        #[cfg(target_os = "linux")]
+        let keychain: Arc<dyn CredentialPort> =
+            Arc::new(LinuxCredentials::new(CREDENTIAL_NAMESPACE));
+        #[cfg(target_os = "windows")]
+        let keychain: Arc<dyn CredentialPort> =
+            Arc::new(WindowsCredentials::new(CREDENTIAL_NAMESPACE));
         let provider_store: Arc<dyn fleqi_application::ports::ProviderStore> = match &database {
             Some(db) => Arc::new(fleqi_adapters::storage::SqliteProviderStore::new(
                 db.clone(),

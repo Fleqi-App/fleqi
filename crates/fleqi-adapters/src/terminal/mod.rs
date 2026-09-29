@@ -1,4 +1,4 @@
-//! TerminalManager（architecture.md §6、ADR-003/004）：portable-pty + 系统 zsh + 自带 shell integration。
+//! TerminalManager（architecture.md §6、ADR-003/004）：portable-pty + 平台 shell + 自带 shell integration。
 //! 所有权：真实 child handle、串行写入、输出消费与落盘、屏幕状态（vt100）、订阅游标、退出回收。
 //! 手动输入与目录控制消息共用一条串行写入队列；目录控制消息只由本模块生成。
 
@@ -81,20 +81,16 @@ pub struct TerminalManager {
     child: Mutex<Box<dyn Child + Send + Sync>>,
     writer: Mutex<Box<dyn Write + Send>>,
     reader: Option<JoinHandle<()>>,
+    /// Unix PTY 设备名，用于结束时回收仍附着该 tty 的进程。Windows ConPTY 没有对应路径。
+    #[cfg_attr(not(unix), allow(dead_code))]
     tty: Option<PathBuf>,
+    shell: integration::ShellKind,
 }
 
 impl TerminalManager {
     pub fn spawn(options: TerminalOptions) -> Result<Self, TerminalError> {
         std::fs::create_dir_all(&options.data_dir)?;
-        let home = std::env::var_os("HOME")
-            .map(PathBuf::from)
-            .unwrap_or_else(|| PathBuf::from("/"));
-        let user_zdotdir = std::env::var_os("ZDOTDIR")
-            .map(PathBuf::from)
-            .unwrap_or(home);
-        let zdotdir = integration::install(&options.data_dir, &user_zdotdir)?;
-
+        let shell = integration::detect_shell();
         let pty = native_pty_system();
         let pair = pty
             .openpty(PtySize {
@@ -104,14 +100,41 @@ impl TerminalManager {
                 pixel_height: 0,
             })
             .map_err(|e| TerminalError::Pty(e.to_string()))?;
-        let mut cmd = CommandBuilder::new("/bin/zsh");
-        cmd.arg("-i");
+        let mut cmd = match shell {
+            integration::ShellKind::Zsh => {
+                let home = std::env::var_os("HOME")
+                    .map(PathBuf::from)
+                    .unwrap_or_else(|| PathBuf::from("/"));
+                let user_zdotdir = std::env::var_os("ZDOTDIR")
+                    .map(PathBuf::from)
+                    .unwrap_or(home);
+                let zdotdir = integration::install(&options.data_dir, &user_zdotdir)?;
+                let mut cmd = CommandBuilder::new("/bin/zsh");
+                cmd.arg("-i");
+                cmd.env("ZDOTDIR", &zdotdir);
+                cmd
+            }
+            integration::ShellKind::Bash => {
+                let rc = integration::install_bash(&options.data_dir)?;
+                let mut cmd = CommandBuilder::new("/bin/bash");
+                cmd.arg("--noprofile");
+                cmd.arg("--rcfile");
+                cmd.arg(rc);
+                cmd
+            }
+            integration::ShellKind::PowerShell => {
+                let profile = integration::install_powershell(&options.data_dir)?;
+                let mut cmd = CommandBuilder::new("powershell.exe");
+                cmd.args(["-NoLogo", "-NoExit", "-NoProfile", "-File"]);
+                cmd.arg(profile);
+                cmd
+            }
+        };
         cmd.cwd(&options.cwd);
         cmd.env(
             "PATH",
             crate::environment::executable_path(&std::env::var_os("PATH").unwrap_or_default()),
         );
-        cmd.env("ZDOTDIR", &zdotdir);
         cmd.env("TERM", "xterm-256color");
         cmd.env(
             "LANG",
@@ -134,7 +157,10 @@ impl TerminalManager {
             .master
             .take_writer()
             .map_err(|e| TerminalError::Pty(e.to_string()))?;
+        #[cfg(unix)]
         let tty = pair.master.tty_name();
+        #[cfg(not(unix))]
+        let tty = None;
 
         let segments = SegmentStore::open(
             &options.data_dir.join("segments"),
@@ -176,6 +202,7 @@ impl TerminalManager {
             writer: Mutex::new(writer),
             reader: Some(reader_thread),
             tty,
+            shell,
         })
     }
 
@@ -210,7 +237,12 @@ impl TerminalManager {
             state.pending_cd = Some((target.to_path_buf(), revision));
             state.prompt_ready = false;
         }
-        let line = integration::cd_control_line(target);
+        let line = match self.shell {
+            integration::ShellKind::PowerShell => integration::powershell_cd_line(target),
+            integration::ShellKind::Zsh | integration::ShellKind::Bash => {
+                integration::cd_control_line(target)
+            }
+        };
         let mut writer = self.writer.lock().expect("writer");
         writer.write_all(&line)?;
         writer.flush()?;
@@ -253,12 +285,18 @@ impl TerminalManager {
         }
     }
 
+    #[cfg(unix)]
     fn foreground_pgid(&self) -> Option<i32> {
         self.inner
             .master
             .lock()
             .expect("master")
             .process_group_leader()
+    }
+
+    #[cfg(not(unix))]
+    fn foreground_pgid(&self) -> Option<i32> {
+        None
     }
 
     /// 前台程序名（前台进程组 ≠ shell 时）。
@@ -301,7 +339,7 @@ impl TerminalManager {
                 Some(_) => TerminalState::Exited,
                 None => TerminalState::Running,
             },
-            shell: "/bin/zsh".into(),
+            shell: self.shell.label().into(),
             size: state.size,
             shell_readiness: readiness,
             foreground_process: foreground,
@@ -376,10 +414,15 @@ impl TerminalManager {
 
     fn terminate(&mut self) {
         let pid = self.inner.shell_pid as i32;
-        // SAFETY: 向本进程创建的 shell 发送信号。
-        unsafe {
-            libc::kill(pid, libc::SIGHUP);
+        #[cfg(unix)]
+        {
+            // SAFETY: 向本进程创建的 shell 发送信号。
+            unsafe {
+                libc::kill(pid, libc::SIGHUP);
+            }
         }
+        #[cfg(not(unix))]
+        let _ = pid;
         let deadline = std::time::Instant::now() + Duration::from_millis(1500);
         loop {
             let done = self
@@ -395,6 +438,7 @@ impl TerminalManager {
             }
             std::thread::sleep(Duration::from_millis(30));
         }
+        #[cfg(unix)]
         if let Some(tty) = &self.tty {
             let name = tty.to_string_lossy();
             let short = name.strip_prefix("/dev/").unwrap_or(&name).to_owned();

@@ -213,11 +213,12 @@ impl ProcessRunner {
     /// 取消：先向子进程 SIGTERM（进程组随 PTY 会话），再 kill() 兜底并关闭 PTY。
     pub fn cancel(&mut self) {
         self.cancelled.store(true, Ordering::SeqCst);
-        // SAFETY: 向本运行器启动的进程发送信号。
+        // Unix 先 SIGTERM 进程组；Windows 由 PTY/Job 的 kill 结束所属进程。
+        #[cfg(unix)]
         unsafe {
             libc::kill(self.pid, libc::SIGTERM);
+            std::thread::sleep(std::time::Duration::from_millis(200));
         }
-        std::thread::sleep(std::time::Duration::from_millis(200));
         let _ = self.child.kill();
     }
 
@@ -267,5 +268,9 @@ impl Child for WatchableChild {
     }
     fn process_id(&self) -> Option<u32> {
         self.child.lock().expect("child 锁").process_id()
+    }
+    #[cfg(windows)]
+    fn as_raw_handle(&self) -> Option<std::os::windows::io::RawHandle> {
+        self.child.lock().expect("child 锁").as_raw_handle()
     }
 }
