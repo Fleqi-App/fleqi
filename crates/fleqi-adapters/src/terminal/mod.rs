@@ -81,6 +81,8 @@ pub struct TerminalManager {
     child: Mutex<Box<dyn Child + Send + Sync>>,
     writer: Mutex<Box<dyn Write + Send>>,
     reader: Option<JoinHandle<()>>,
+    /// Unix PTY 设备名，用于结束时回收仍附着该 tty 的进程。Windows ConPTY 没有对应路径。
+    #[cfg_attr(not(unix), allow(dead_code))]
     tty: Option<PathBuf>,
     shell: integration::ShellKind,
 }
@@ -155,7 +157,10 @@ impl TerminalManager {
             .master
             .take_writer()
             .map_err(|e| TerminalError::Pty(e.to_string()))?;
+        #[cfg(unix)]
         let tty = pair.master.tty_name();
+        #[cfg(not(unix))]
+        let tty = None;
 
         let segments = SegmentStore::open(
             &options.data_dir.join("segments"),

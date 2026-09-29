@@ -269,4 +269,8 @@ impl Child for WatchableChild {
     fn process_id(&self) -> Option<u32> {
         self.child.lock().expect("child 锁").process_id()
     }
+    #[cfg(windows)]
+    fn as_raw_handle(&self) -> Option<std::os::windows::io::RawHandle> {
+        self.child.lock().expect("child 锁").as_raw_handle()
+    }
 }
