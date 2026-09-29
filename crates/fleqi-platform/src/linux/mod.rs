@@ -10,3 +10,4 @@ pub mod permissions;
 pub mod picker;
 pub mod surface;
 pub mod update_install;
+pub mod x11;

@@ -25,6 +25,10 @@ use fleqi_platform::linux::surface::{
     apply_material, file_manager_frame, layout_composer, material_kind, present, set_frame,
 };
 use fleqi_platform::linux::update_install::install_verified;
+use fleqi_platform::linux::x11::{
+    directory_from_manager, is_file_manager, parse_active_window, parse_wm_class, parse_wm_name,
+    parse_wm_pid, parse_workarea, parse_xwininfo,
+};
 use fleqi_platform::scheduling::MainThreadExecutor;
 
 const NAMESPACE: &str = "app.fleqi.desktop";
@@ -342,23 +346,37 @@ impl MainThreadExecutor for InlineMain {
 fn capture_reports_no_directory_and_location_parser_rejects_escape() {
     let port = LinuxContextPort::new(Arc::new(InlineMain));
     let raw = port.capture();
-    assert!(raw.directory.is_none());
     assert!(raw.selection.is_empty());
-    assert!(raw.source_window_id.is_none());
-    let ContextAvailability::NoDirectory { reason } = raw.unavailable.expect("unavailable") else {
-        panic!("capture must not invent a file manager directory");
-    };
-    assert!(reason.contains("文件管理器"), "{reason}");
-    assert!(reason.contains("Finder"), "{reason}");
-    let kind = session_kind(
-        std::env::var("XDG_SESSION_TYPE").ok().as_deref(),
-        std::env::var("WAYLAND_DISPLAY").ok().as_deref(),
-        std::env::var("DISPLAY").ok().as_deref(),
-    );
-    match kind {
-        SessionKind::X11 => assert!(reason.contains("X11"), "{reason}"),
-        SessionKind::Wayland => assert!(reason.contains("Wayland"), "{reason}"),
-        SessionKind::Unknown => assert!(reason.contains("未知"), "{reason}"),
+    if let Some(directory) = &raw.directory {
+        assert!(directory.native.is_dir(), "{}", directory.native.display());
+        assert!(raw.unavailable.is_none());
+        assert!(raw.source_window_id.is_some());
+    } else {
+        let ContextAvailability::NoDirectory { reason } = raw.unavailable.expect("unavailable")
+        else {
+            panic!("capture must not invent a file manager directory");
+        };
+        assert!(
+            reason.contains("文件管理器") || reason.contains("窗口"),
+            "{reason}"
+        );
+        assert!(
+            reason.contains("Finder") || reason.contains("选择文件夹"),
+            "{reason}"
+        );
+        let kind = session_kind(
+            std::env::var("XDG_SESSION_TYPE").ok().as_deref(),
+            std::env::var("WAYLAND_DISPLAY").ok().as_deref(),
+            std::env::var("DISPLAY").ok().as_deref(),
+        );
+        match kind {
+            SessionKind::X11 => assert!(reason.contains("X11"), "{reason}"),
+            SessionKind::Wayland => assert!(reason.contains("Wayland"), "{reason}"),
+            SessionKind::Unknown => assert!(
+                reason.contains("未知") || reason.contains("窗口"),
+                "{reason}"
+            ),
+        }
     }
 
     assert_eq!(
@@ -483,10 +501,14 @@ fn material_stays_solid_and_frame_is_not_invented() {
     assert_eq!(material_kind(true), "solid");
     assert_eq!(material_kind(false), "solid");
     let frame = file_manager_frame();
-    assert!(!frame.has_window);
-    assert_eq!(frame.width, 0.0);
-    assert_eq!(frame.height, 0.0);
-    assert_eq!(frame.window_id, 0);
+    if frame.has_window {
+        assert!(frame.width >= 80.0 && frame.height >= 80.0, "{frame:?}");
+        assert!(frame.window_id != 0);
+    } else {
+        assert_eq!(frame.width, 0.0);
+        assert_eq!(frame.height, 0.0);
+        assert_eq!(frame.window_id, 0);
+    }
     unsafe {
         apply_material(std::ptr::null_mut(), true, true, 1);
         set_frame(std::ptr::null_mut(), 1.0, 2.0, 3.0, 4.0);
@@ -599,6 +621,62 @@ fn gzip_store(data: &[u8]) -> Vec<u8> {
     out.extend_from_slice(&crc32(data).to_le_bytes());
     out.extend_from_slice(&(u32::try_from(data.len()).unwrap_or(u32::MAX)).to_le_bytes());
     out
+}
+
+#[test]
+fn live_display_reads_open_file_manager_when_present() {
+    if std::env::var_os("DISPLAY").is_none() {
+        return;
+    }
+    let observed = fleqi_platform::linux::x11::observe();
+    if observed.frame.has_window {
+        assert!(observed.frame.width >= 80.0);
+        if observed.manager.as_deref() == Some("Pcmanfm") {
+            assert_eq!(
+                observed.directory.as_deref(),
+                Some(std::path::Path::new("/tmp/fleqi-fm-demo"))
+            );
+        }
+    }
+}
+
+#[test]
+fn x11_parser_reads_pcmanfm_geometry_and_matching_directory() {
+    let root = "_NET_ACTIVE_WINDOW(WINDOW): window id # 0x1a00007, 0x0\n_NET_WORKAREA(CARDINAL) = 0, 29, 1920, 1171\n";
+    assert_eq!(parse_active_window(root), Some(0x1a00007));
+    assert_eq!(parse_workarea(root), Some((0.0, 29.0, 1920.0, 1171.0)));
+    let props = "WM_CLASS(STRING) = \"pcmanfm\", \"Pcmanfm\"\n_NET_WM_NAME(UTF8_STRING) = \"fleqi-fm-demo\"\n_NET_WM_PID(CARDINAL) = 36896\n";
+    assert_eq!(
+        parse_wm_class(props),
+        Some(("pcmanfm".into(), "Pcmanfm".into()))
+    );
+    assert_eq!(parse_wm_name(props).as_deref(), Some("fleqi-fm-demo"));
+    assert_eq!(parse_wm_pid(props), Some(36896));
+    assert!(is_file_manager("pcmanfm", "Pcmanfm"));
+    assert!(!is_file_manager("xfce4-panel", "Xfce4-panel"));
+    let info = "\
+Absolute upper-left X:  640\n\
+Absolute upper-left Y:  388\n\
+Width: 640\n\
+Height: 480\n";
+    assert_eq!(parse_xwininfo(info), Some((640.0, 388.0, 640.0, 480.0)));
+    let dir = std::env::temp_dir().join("fleqi-x11-parser");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let title = dir.file_name().unwrap().to_string_lossy().into_owned();
+    let found = directory_from_manager(&title, &[dir.to_string_lossy().into_owned()], |path| {
+        path == dir
+    });
+    assert_eq!(found, Some(dir.clone()));
+    assert!(
+        directory_from_manager(
+            "not-the-folder",
+            &[dir.to_string_lossy().into_owned()],
+            |_| true
+        )
+        .is_none()
+    );
+    let _ = std::fs::remove_dir_all(&dir);
 }
 
 fn crc32(data: &[u8]) -> u32 {

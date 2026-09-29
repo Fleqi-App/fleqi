@@ -7,7 +7,7 @@ use std::ffi::c_void;
 use crate::frame::HostFrame;
 
 pub fn file_manager_frame() -> HostFrame {
-    HostFrame::default()
+    super::x11::observe().frame
 }
 
 pub fn material_kind(_transparency: bool) -> &'static str {

@@ -2,8 +2,8 @@
 //!
 //! 只根据会话环境变量区分 X11 / Wayland，不读取文件管理器窗口，也不编造目录。
 
-pub use fleqi_application::ports::{ContextPort, DirectoryPick, RawContext};
-pub use fleqi_domain::context::ContextAvailability;
+pub use fleqi_application::ports::{ContextPort, DirectoryPick, RawContext, RawPath};
+pub use fleqi_domain::context::{ContextAvailability, PathKind, ViewKind};
 use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
 
@@ -31,15 +31,39 @@ impl LinuxContextPort {
 
 impl ContextPort for LinuxContextPort {
     fn capture(&self) -> RawContext {
+        let observed = super::x11::observe();
+        if let Some(directory) = observed.directory.filter(|path| path.is_dir()) {
+            return RawContext {
+                source_window_id: Some(observed.frame.window_id),
+                directory: Some(RawPath {
+                    native: directory,
+                    kind: PathKind::Directory,
+                }),
+                view_kind: Some(ViewKind::Physical),
+                unavailable: None,
+                ..RawContext::default()
+            };
+        }
         let kind = session_kind(
             env_value("XDG_SESSION_TYPE").as_deref(),
             env_value("WAYLAND_DISPLAY").as_deref(),
             env_value("DISPLAY").as_deref(),
         );
+        let reason = match (&observed.manager, &observed.title) {
+            (Some(manager), Some(title)) if !title.is_empty() => format!(
+                "已看到 {manager} 窗口「{title}」，但标题对不上一个现存目录。此桌面不会被当作 Finder；请选择文件夹。"
+            ),
+            (Some(manager), _) => {
+                format!("已看到 {manager} 窗口，但读不到可执行目录。请选择文件夹。")
+            }
+            _ => no_directory_reason(kind),
+        };
         RawContext {
-            unavailable: Some(ContextAvailability::NoDirectory {
-                reason: no_directory_reason(kind),
-            }),
+            source_window_id: observed
+                .frame
+                .has_window
+                .then_some(observed.frame.window_id),
+            unavailable: Some(ContextAvailability::NoDirectory { reason }),
             ..RawContext::default()
         }
     }
