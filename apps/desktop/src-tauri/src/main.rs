@@ -207,7 +207,7 @@ fn main() {
                 if let Some(state) = app_for_context_event.try_state::<Arc<AppState>>()
                     && let Some(snapshot) = state.context.latest()
                     && windows::finder_interaction_active(&app_for_context_event)
-                    && fleqi_platform::macos::windows::finder_frame().has_window
+                    && fleqi_platform::host::file_manager_frame().has_window
                 {
                     state.surface.on_context_changed(&snapshot);
                 }
@@ -267,7 +267,7 @@ fn main() {
                         if state.quitting.load(Ordering::Acquire) {
                             break;
                         }
-                        if fleqi_platform::macos::windows::finder_frame().foreground == 1 {
+                        if fleqi_platform::host::file_manager_frame().foreground == 1 {
                             state.refresh_context_routed(&app_for_context);
                         }
                     }

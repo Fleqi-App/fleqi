@@ -1,8 +1,9 @@
 //! macOS Keychain 凭据端口（architecture.md §12.3）：只操作 Fleqi 自有命名空间
 //! （kSecAttrService = namespace），不同步 iCloud；不提供前端读回秘密的 IPC。
 
-use fleqi_application::dto::CredentialStoreStatus;
 use fleqi_application::ports::{CredentialError, CredentialPort};
+
+pub use crate::credentials::self_test;
 use security_framework::base::Error as SecError;
 use security_framework::passwords::{
     delete_generic_password, get_generic_password, set_generic_password,
@@ -63,37 +64,5 @@ impl CredentialPort for KeychainCredentials {
 
     fn load(&self, key: &str) -> Result<Vec<u8>, CredentialError> {
         get_generic_password(&self.service, key).map_err(map_error)
-    }
-}
-
-/// 自检：用独立命名的测试项走存/查/换/删全流程，结束清理；不触碰用户凭据。
-pub fn self_test(port: &dyn CredentialPort, stamp: &str) -> CredentialStoreStatus {
-    let key = format!("selftest-{}", stamp.replace([':', '-', '.'], ""));
-    let namespace = port.namespace().to_owned();
-    let outcome = (|| -> Result<(), CredentialError> {
-        let _ = port.delete(&key);
-        port.store(&key, b"fleqi-selftest-1")?;
-        if !port.exists(&key)? {
-            return Err(CredentialError::Failed("写入后读取不到测试项".into()));
-        }
-        port.replace(&key, b"fleqi-selftest-2")?;
-        port.delete(&key)?;
-        if port.exists(&key)? {
-            return Err(CredentialError::Failed("删除后测试项仍存在".into()));
-        }
-        Ok(())
-    })();
-    let _ = port.delete(&key);
-    match outcome {
-        Ok(()) => CredentialStoreStatus {
-            available: true,
-            namespace,
-            message: None,
-        },
-        Err(error) => CredentialStoreStatus {
-            available: false,
-            namespace,
-            message: Some(error.to_string()),
-        },
     }
 }

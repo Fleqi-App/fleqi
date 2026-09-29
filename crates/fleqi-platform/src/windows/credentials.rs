@@ -238,6 +238,7 @@ pub fn map_credential_code(code: i32) -> Result<(), CredentialError> {
     }
 }
 
+#[cfg(not(target_os = "windows"))]
 fn unavailable() -> CredentialError {
     CredentialError::Unavailable("Windows 凭据管理器仅在 Windows 上可用".into())
 }

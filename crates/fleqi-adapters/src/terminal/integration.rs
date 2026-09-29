@@ -55,3 +55,116 @@ pub fn cd_control_line(target: &Path) -> Vec<u8> {
     let quoted = target.to_string_lossy().replace('\'', "'\\''");
     format!(" builtin cd -- '{quoted}'\r").into_bytes()
 }
+
+/// PowerShell 目录控制消息。同样使用单引号字面量，不经 Invoke-Expression。
+pub fn powershell_cd_line(target: &Path) -> Vec<u8> {
+    let quoted = target.to_string_lossy().replace('\'', "''");
+    format!(" Set-Location -LiteralPath '{quoted}'\r").into_bytes()
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ShellKind {
+    Zsh,
+    Bash,
+    PowerShell,
+}
+
+impl ShellKind {
+    pub fn label(self) -> &'static str {
+        match self {
+            ShellKind::Zsh => "/bin/zsh",
+            ShellKind::Bash => "/bin/bash",
+            ShellKind::PowerShell => "powershell.exe",
+        }
+    }
+}
+
+/// macOS 固定 zsh。Windows 使用 PowerShell。其它 Unix 在存在 zsh 时沿用同一套钩子，否则用 bash。
+pub fn detect_shell() -> ShellKind {
+    if cfg!(target_os = "windows") {
+        ShellKind::PowerShell
+    } else if cfg!(target_os = "macos") || Path::new("/bin/zsh").is_file() {
+        ShellKind::Zsh
+    } else {
+        ShellKind::Bash
+    }
+}
+
+/// bash 包装：不改用户配置。用 `--rcfile` 加载本文件。
+/// 提示符与命令开始报告 OSC 7331。bash 没有 zsh 的行编辑钩子，编辑行长度只在提示符上报 0。
+pub fn install_bash(base: &Path) -> std::io::Result<PathBuf> {
+    let dir = base.join("bash-integration");
+    std::fs::create_dir_all(&dir)?;
+    let rc = dir.join("bashrc");
+    let script = format!(
+        r#"# Fleqi bash integration (generated; do not edit)
+if [[ -f "$HOME/.bashrc" ]]; then
+  source "$HOME/.bashrc"
+fi
+__fleqi_osc() {{ printf '\e]{osc};%s\a' "$1"; }}
+__fleqi_hex() {{ printf '%s' "$1" | od -An -v -tx1 | tr -d ' \n'; }}
+__fleqi_prompt() {{
+  __fleqi_osc "prompt;cwd=$(__fleqi_hex "$PWD")"
+  __fleqi_osc "edit;len=0"
+}}
+PROMPT_COMMAND="__fleqi_prompt${{PROMPT_COMMAND:+;$PROMPT_COMMAND}}"
+PS0=$'\e]{osc};preexec\a'
+HISTCONTROL=ignorespace${{HISTCONTROL:+:$HISTCONTROL}}
+"#,
+        osc = OSC_CODE
+    );
+    std::fs::write(&rc, script)?;
+    Ok(rc)
+}
+
+/// PowerShell 包装：不改用户配置。提示符报告 OSC 7331。
+pub fn install_powershell(base: &Path) -> std::io::Result<PathBuf> {
+    let dir = base.join("powershell-integration");
+    std::fs::create_dir_all(&dir)?;
+    let script = dir.join("fleqi-profile.ps1");
+    let body = format!(
+        r#"# Fleqi PowerShell integration (generated; do not edit)
+function global:prompt {{
+    $bytes = [System.Text.Encoding]::UTF8.GetBytes($PWD.Path)
+    $hex = -join ($bytes | ForEach-Object {{ $_.ToString('x2') }})
+    Write-Host -NoNewline "`e]{osc};prompt;cwd=$hex`a"
+    Write-Host -NoNewline "`e]{osc};edit;len=0`a"
+    "PS $($executionContext.SessionState.Path.CurrentLocation)> "
+}}
+"#,
+        osc = OSC_CODE
+    );
+    std::fs::write(&script, body)?;
+    Ok(script)
+}
+
+#[cfg(test)]
+mod shell_tests {
+    use super::*;
+
+    #[test]
+    fn bash_and_powershell_control_lines_keep_paths_literal() {
+        let path = Path::new("/tmp/a b/'$(whoami)'");
+        let bash = String::from_utf8(cd_control_line(path)).unwrap();
+        assert!(bash.contains("builtin cd --"));
+        assert!(bash.contains("$(whoami)"));
+        assert!(!bash.contains("whoami)'\n"));
+        let ps = String::from_utf8(powershell_cd_line(path)).unwrap();
+        assert!(ps.contains("Set-Location -LiteralPath"));
+        assert!(ps.contains("''$(whoami)''"));
+        assert!(!ps.contains("Invoke-Expression"));
+    }
+
+    #[test]
+    fn generated_integrations_emit_private_osc() {
+        let dir = tempfile::tempdir().unwrap();
+        let bash = std::fs::read_to_string(install_bash(dir.path()).unwrap()).unwrap();
+        assert!(bash.contains("7331"));
+        assert!(bash.contains("preexec"));
+        assert!(bash.contains("edit;len=0"));
+        let ps = std::fs::read_to_string(install_powershell(dir.path()).unwrap()).unwrap();
+        assert!(ps.contains("7331"));
+        assert!(ps.contains("function global:prompt"));
+        assert!(!ps.contains("{osc}"));
+    }
+}
