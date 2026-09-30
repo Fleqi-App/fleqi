@@ -110,7 +110,7 @@ pub fn builtin_catalog() -> Vec<CatalogEntry> {
             "CAP-IMAGE-001",
             "image",
             "图片格式转换",
-            "PNG/JPG/WebP 六个方向；质量参数",
+            "PNG/JPG/WebP 互转，支持 HEIF/HEIC 输入；质量参数",
             "图像",
             &["DEP-IMAGE"],
         ),

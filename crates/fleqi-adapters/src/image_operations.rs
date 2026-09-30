@@ -7,19 +7,54 @@ use std::{
     sync::atomic::{AtomicBool, Ordering},
 };
 
+pub fn open_image(source: &Path) -> Result<DynamicImage, String> {
+    load(source, &AtomicBool::new(false))
+}
+
 pub fn load(source: &Path, cancel: &AtomicBool) -> Result<DynamicImage, String> {
-    let decoded = (|| -> image::ImageResult<DynamicImage> {
-        let reader = image::ImageReader::open(source)?.with_guessed_format()?;
-        let mut decoder = reader.into_decoder()?;
-        let orientation = decoder.orientation()?;
-        let mut decoded = DynamicImage::from_decoder(decoder)?;
-        decoded.apply_orientation(orientation);
-        Ok(decoded)
-    })();
-    if let Ok(image) = decoded {
-        return Ok(image);
+    let header = read_header(source)?;
+    if crate::heif::is_heif(&header) {
+        return crate::heif::decode(source, cancel);
     }
-    let temporary = tempfile::tempdir().map_err(|e| e.to_string())?;
+    match decode_with_image_crate(source) {
+        Ok(image) => Ok(image),
+        Err(error) => {
+            #[cfg(target_os = "macos")]
+            {
+                let _ = error;
+                decode_with_sips(source, cancel)
+            }
+            #[cfg(not(target_os = "macos"))]
+            {
+                Err(format!("输入无法解码：{error}"))
+            }
+        }
+    }
+}
+
+fn read_header(source: &Path) -> Result<Vec<u8>, String> {
+    let mut file = std::fs::File::open(source).map_err(|error| format!("无法读取图像：{error}"))?;
+    let mut header = vec![0; 64];
+    use std::io::Read;
+    let count = file
+        .read(&mut header)
+        .map_err(|error| format!("无法读取图像：{error}"))?;
+    header.truncate(count);
+    Ok(header)
+}
+
+fn decode_with_image_crate(source: &Path) -> image::ImageResult<DynamicImage> {
+    let reader = image::ImageReader::open(source)?.with_guessed_format()?;
+    let mut decoder = reader.into_decoder()?;
+    let orientation = decoder.orientation()?;
+    let mut decoded = DynamicImage::from_decoder(decoder)?;
+    decoded.apply_orientation(orientation);
+    Ok(decoded)
+}
+
+#[cfg(target_os = "macos")]
+fn decode_with_sips(source: &Path, cancel: &AtomicBool) -> Result<DynamicImage, String> {
+    let temporary = tempfile::tempdir().map_err(|error| error.to_string())?;
     let converted = temporary.path().join("decoded.png");
     let mut command = std::process::Command::new("/usr/bin/sips");
     command
@@ -28,7 +63,7 @@ pub fn load(source: &Path, cancel: &AtomicBool) -> Result<DynamicImage, String> 
         .arg("--out")
         .arg(&converted);
     run_command(command, cancel)?;
-    image::open(converted).map_err(|e| format!("输入无法解码：{e}"))
+    image::open(converted).map_err(|error| format!("输入无法解码：{error}"))
 }
 fn color(value: &str) -> Result<Rgba<u8>, String> {
     let value = value.strip_prefix('#').unwrap_or(value);
