@@ -28,4 +28,7 @@ zip = { version = "8.6.0", default-features = false, features = ["deflate"] }
 
 tempfile = "3"
 
+[target.'cfg(target_os = "linux")'.dependencies]
+libheif-rs = { version = "3.0.0", default-features = false, features = ["v1_17"] }
+
 [dev-dependencies]
