@@ -193,14 +193,14 @@ fn main() {
             app.set_activation_policy(tauri::ActivationPolicy::Regular);
             let state = AppState::assemble(app.handle())?;
             app.manage(Arc::clone(&state));
-            #[cfg(not(feature = "desktop-test"))]
+            #[cfg(all(not(feature = "desktop-test"), not(windows)))]
             {
                 let update_app = app.handle().clone();
                 tauri::async_runtime::spawn(async move {
                     let _ = updates::check(&update_app).await;
                 });
             }
-            #[cfg(not(feature = "desktop-test"))]
+            #[cfg(all(not(feature = "desktop-test"), not(windows)))]
             state.tools.prepare();
             let app_for_context_event = app.handle().clone();
             app.listen("context:changed", move |_| {

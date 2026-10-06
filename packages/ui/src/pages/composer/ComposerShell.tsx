@@ -398,7 +398,7 @@ export function ComposerBar({ onOpenSessions, onOpenTerminal, sessionsOpen, pane
                 }
               }}
               placeholder={planning ? "正在规划，暂时无法发送；可先准备下一条信息" : terminalMode ? "" : "输入指令或问题；首个半角 ! 进入手动终端"}
-              className={`h-8 min-h-8 w-full resize-none rounded-lg border bg-card px-3 py-1.5 text-sm leading-5 outline-none placeholder:text-muted-foreground ${
+              className={`h-8 min-h-8 w-full resize-none rounded-lg border bg-card px-3 ${host.bootstrap?.buildInfo.targetOs === "windows" ? "py-1" : "py-1.5"} text-sm leading-5 outline-none placeholder:text-muted-foreground ${
                 terminalMode ? "border-success/50 text-terminal-mode-text" : "border-border"
               }`}
             />

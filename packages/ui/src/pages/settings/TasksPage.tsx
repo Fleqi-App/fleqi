@@ -5,6 +5,7 @@ import { InlineStatus } from "../../components/InlineStatus";
 import { SegmentedControl } from "../../components/SegmentedControl";
 import { isAppError, newRequestId } from "../../adapters/host";
 import { useHost } from "../../store/host";
+import { fileManagerLabel } from "../../platform-copy";
 
 /** 任务与诊断（ui-design.md §10.2）：aiPolicy 真实保存；上限/保留项以说明呈现（不生成未定义控件）。 */
 export function TasksPage() {
@@ -40,6 +41,7 @@ export function TasksPage() {
             <label htmlFor="aiPolicy">AI 确认策略</label>
             <p id="aiPolicy-description" className="mt-0.5 text-xs text-muted-foreground">
               readOnlyAutoConfirmChanges：只读计划自动执行，修改/未知先确认；yolo：全部 AI 操作免确认（仍不绕过系统权限与外部认证）。
+              {host.bootstrap?.buildInfo.targetOs === "windows" && " Windows 自由脚本按未知影响处理，需要先确认；内置只读操作仍可自动执行。"}
             </p>
           </div>
           <SegmentedControl
@@ -62,7 +64,7 @@ export function TasksPage() {
           items={[
             { label: "terminalFontSize", value: String(settings.terminalFontSize), mono: true },
             { label: "屏幕 scrollback", value: "10000 行（固定）" },
-            { label: "目录跟随", value: "当前会话跟随 Finder；忙碌时等待安全提示符" },
+            { label: "目录跟随", value: `当前会话跟随 ${fileManagerLabel(host.bootstrap?.buildInfo.targetOs)}；忙碌时等待安全提示符` },
             { label: "输入历史上限", value: "200 条" },
             { label: "普通结束历史保留", value: "30 天（置顶会话不自动清理）" },
             { label: "AI 并发 / 活跃会话上限", value: "4 / 16（达上限排队，不取消旧任务）" },

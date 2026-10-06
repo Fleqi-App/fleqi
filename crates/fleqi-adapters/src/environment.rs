@@ -2,6 +2,11 @@
 use std::ffi::{OsStr, OsString};
 use std::path::PathBuf;
 
+pub(crate) fn powershell() -> PathBuf {
+    PathBuf::from(std::env::var_os("SystemRoot").unwrap_or_else(|| "C:\\Windows".into()))
+        .join("System32/WindowsPowerShell/v1.0/powershell.exe")
+}
+
 pub(crate) fn executable_paths(inherited: &OsStr) -> Vec<PathBuf> {
     let mut paths = Vec::new();
     // App bundles launched by Finder usually inherit only the system PATH.

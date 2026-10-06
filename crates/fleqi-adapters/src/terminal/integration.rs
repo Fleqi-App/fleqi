@@ -122,18 +122,8 @@ pub fn install_powershell(base: &Path) -> std::io::Result<PathBuf> {
     let dir = base.join("powershell-integration");
     std::fs::create_dir_all(&dir)?;
     let script = dir.join("fleqi-profile.ps1");
-    let body = format!(
-        r#"# Fleqi PowerShell integration (generated; do not edit)
-function global:prompt {{
-    $bytes = [System.Text.Encoding]::UTF8.GetBytes($PWD.Path)
-    $hex = -join ($bytes | ForEach-Object {{ $_.ToString('x2') }})
-    Write-Host -NoNewline "`e]{osc};prompt;cwd=$hex`a"
-    Write-Host -NoNewline "`e]{osc};edit;len=0`a"
-    "PS $($executionContext.SessionState.Path.CurrentLocation)> "
-}}
-"#,
-        osc = OSC_CODE
-    );
+    let mut body = b"\xef\xbb\xbf".to_vec();
+    body.extend_from_slice(include_bytes!("powershell.ps1"));
     std::fs::write(&script, body)?;
     Ok(script)
 }
@@ -163,8 +153,9 @@ mod shell_tests {
         assert!(bash.contains("preexec"));
         assert!(bash.contains("edit;len=0"));
         let ps = std::fs::read_to_string(install_powershell(dir.path()).unwrap()).unwrap();
-        assert!(ps.contains("7331"));
-        assert!(ps.contains("function global:prompt"));
+        assert!(ps.contains("NamedPipeClientStream"));
+        assert!(ps.contains("PowerShell.OnIdle"));
+        assert!(ps.contains("GetBufferState"));
         assert!(!ps.contains("{osc}"));
     }
 }

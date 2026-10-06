@@ -158,6 +158,8 @@ export interface HostAdapter {
 
 /** catalog_query 条目（宿主 catalog.rs 的展示 DTO；参数化能力数据）。 */
 export interface CatalogEntry {
+  availability?: import("@fleqi/contracts").CapabilityState;
+  unavailableReason?: string | null;
   id: string;
   category: string;
   title: string;

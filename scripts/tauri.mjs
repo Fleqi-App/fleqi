@@ -3,7 +3,9 @@
 import { spawn } from "node:child_process";
 import { homedir } from "node:os";
 import path from "node:path";
-const child = spawn("pnpm", ["--filter", "fleqi-desktop", "exec", "tauri", ...process.argv.slice(2)], {
+import { invocation } from "./lib/process.mjs";
+const [command, args] = invocation("pnpm", ["--filter", "fleqi-desktop", "exec", "tauri", ...process.argv.slice(2)]);
+const child = spawn(command, args, {
   stdio: "inherit",
   env: { ...process.env, PATH: `${path.join(homedir(), ".cargo", "bin")}${path.delimiter}${process.env.PATH ?? ""}` },
 });

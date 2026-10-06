@@ -166,6 +166,53 @@ struct FakeContext {
     raw: Mutex<RawContext>,
     pick: Mutex<DirectoryPick>,
 }
+
+#[test]
+fn windows_picker_survives_missing_explorer_but_yields_to_a_real_context() {
+    struct ExplorerPort(FakeContext);
+    impl ContextPort for ExplorerPort {
+        fn source(&self) -> ContextSource {
+            ContextSource::Explorer
+        }
+        fn capture(&self) -> RawContext {
+            self.0.capture()
+        }
+        fn pick_directory(&self) -> DirectoryPick {
+            self.0.pick_directory()
+        }
+    }
+    let port = Arc::new(ExplorerPort(FakeContext {
+        raw: Mutex::new(RawContext {
+            unavailable: Some(fleqi_domain::context::ContextAvailability::NoDirectory {
+                reason: "no window".into(),
+            }),
+            ..RawContext::default()
+        }),
+        pick: Mutex::new(DirectoryPick::Selected(fleqi_application::ports::RawPath {
+            native: std::env::temp_dir(),
+            kind: fleqi_domain::context::PathKind::Directory,
+        })),
+    }));
+    let context = ContextService::new(
+        port.clone(),
+        Arc::new(FakeClock),
+        Arc::new(Events::default()),
+        Arc::new(PathRegistry::new()),
+    );
+    context.pick_directory();
+    let picked = context.latest().unwrap();
+    assert_eq!(context.refresh(), picked);
+    *port.0.raw.lock().unwrap() = RawContext {
+        directory: Some(fleqi_application::ports::RawPath {
+            native: std::env::current_dir().unwrap(),
+            kind: fleqi_domain::context::PathKind::Directory,
+        }),
+        ..RawContext::default()
+    };
+    let captured = context.refresh();
+    assert_eq!(captured.source, ContextSource::Explorer);
+    assert_ne!(captured.id, picked.id);
+}
 impl ContextPort for FakeContext {
     fn capture(&self) -> RawContext {
         self.raw.lock().unwrap().clone()

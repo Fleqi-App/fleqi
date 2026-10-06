@@ -23,6 +23,7 @@ fn execute(
         .unwrap_or_default();
     let parameters: BTreeMap<_, _> = params.iter().copied().collect();
     let step = ExecutionStep {
+        script_runtime: None,
         kind: StepKind::Native,
         operation: operation.into(),
         executable_ref: None,
@@ -36,6 +37,42 @@ fn execute(
     NativeSteps::new(paths)
         .execute(&step, directory, &AtomicBool::new(cancelled))
         .map(|report| report.output)
+}
+
+const TEXT_CREATE: &str = if cfg!(windows) {
+    "CAP-FILE-001"
+} else {
+    "CAP-TEXT-002"
+};
+
+#[cfg(windows)]
+#[test]
+fn windows_output_names_cannot_target_streams_devices_or_trimmed_aliases() {
+    let root = tempfile::tempdir().unwrap();
+    for name in [
+        "normal.txt:stream",
+        "NUL",
+        "CON.txt",
+        "COM¹",
+        "trailing.",
+        "trailing ",
+        "wild*card",
+    ] {
+        let result = execute(
+            root.path(),
+            TEXT_CREATE,
+            None,
+            &[
+                ("name", name),
+                ("content", "new"),
+                ("encoding", "utf-8"),
+                ("newline", "lf"),
+            ],
+            false,
+        );
+        assert!(result.is_err(), "{name}: {result:?}");
+    }
+    assert_eq!(std::fs::read_dir(root.path()).unwrap().count(), 0);
 }
 
 #[test]
@@ -52,17 +89,10 @@ fn overwrite_replaces_exact_existing_output_and_unique_mode_keeps_both() {
             ("_nameConflict", policy),
         ]
     };
-    execute(
-        root.path(),
-        "CAP-TEXT-002",
-        None,
-        &text("uniqueName"),
-        false,
-    )
-    .unwrap();
+    execute(root.path(), TEXT_CREATE, None, &text("uniqueName"), false).unwrap();
     assert_eq!(std::fs::read_to_string(&target).unwrap(), "old");
     assert!(root.path().join("同名 文件 (1).txt").is_file());
-    execute(root.path(), "CAP-TEXT-002", None, &text("overwrite"), false).unwrap();
+    execute(root.path(), TEXT_CREATE, None, &text("overwrite"), false).unwrap();
     assert_eq!(std::fs::read_to_string(&target).unwrap(), "new");
     assert!(!root.path().join("同名 文件 (2).txt").exists());
     assert!(std::fs::read_dir(root.path()).unwrap().all(|entry| {
@@ -124,7 +154,7 @@ fn overwrite_protects_input_files_and_existing_directories() {
     std::fs::write(root.path().join("folder.txt/keep"), "keep").unwrap();
     execute(
         root.path(),
-        "CAP-TEXT-002",
+        TEXT_CREATE,
         None,
         &[
             ("name", "folder.txt"),

@@ -1,226 +1,172 @@
-//! 资源管理器目录。LocationURL 的解析是纯函数；COM 读取只在 Windows 上执行。
-
-use fleqi_application::ports::{ContextPort, DirectoryPick, RawContext, RawPath};
-use fleqi_domain::context::{ContextAvailability, PathKind, ViewKind};
-use std::path::PathBuf;
-use std::sync::Arc;
-
+//! Explorer 的当前窗口和活动标签页；COM 读取在单一 STA 上执行。
 use crate::scheduling::MainThreadExecutor;
-
-use super::picker::pick_directory_blocking;
-
-/// 固定脚本：枚举 Shell.Application 窗口并逐行打印 LocationURL。不含运行期插值。
-pub const EXPLORER_LOCATIONS_SCRIPT: &str = r#"
-$OutputEncoding = [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false
-$ErrorActionPreference = 'Stop'
-$shell = New-Object -ComObject Shell.Application
-foreach ($window in @($shell.Windows())) {
-    try {
-        $location = $window.LocationURL
-        if ($location) {
-            Write-Output $location
-        }
-    } catch {
-    }
-}
-exit 0
-"#;
+use fleqi_application::ports::{ContextPort, DirectoryPick, RawContext};
+use fleqi_domain::context::{ContextAvailability, ContextSource};
+use std::sync::Arc;
 
 pub struct WindowsContextPort {
     main: Arc<dyn MainThreadExecutor>,
+    #[cfg(windows)]
+    requests: std::sync::mpsc::SyncSender<std::sync::mpsc::Sender<RawContext>>,
 }
 
 impl WindowsContextPort {
     pub fn new(main: Arc<dyn MainThreadExecutor>) -> Self {
+        #[cfg(windows)]
+        {
+            let (requests, receive) =
+                std::sync::mpsc::sync_channel::<std::sync::mpsc::Sender<RawContext>>(1);
+            std::thread::spawn(move || {
+                let apartment = super::native::Apartment::new();
+                for reply in receive {
+                    let context = match &apartment {
+                        Ok(_) => capture_explorer().unwrap_or_else(failed),
+                        Err(error) => failed(format!("Explorer COM 初始化失败：{error}")),
+                    };
+                    let _ = reply.send(context);
+                }
+            });
+            Self { main, requests }
+        }
+        #[cfg(not(windows))]
         Self { main }
     }
 }
 
-/// 把资源管理器 LocationURL 转成 Windows 路径。
-///
-/// 接受 `file:///C:/dir/My%20Folder`（以及 localhost 形式）。拒绝 http(s)、`..` 段和空路径。
-pub fn location_to_path(text: &str) -> Option<PathBuf> {
-    let text = text.trim();
-    if text.is_empty() {
-        return None;
-    }
-    let (scheme, rest) = text.split_once(':')?;
-    if scheme.eq_ignore_ascii_case("http") || scheme.eq_ignore_ascii_case("https") {
-        return None;
-    }
-    if !scheme.eq_ignore_ascii_case("file") {
-        return None;
-    }
-    let rest = rest.strip_prefix("//")?;
-    let (host, path) = match rest.split_once('/') {
-        Some((host, path)) => (host, path),
-        None => (rest, ""),
-    };
-    let path = path.split(['?', '#']).next().unwrap_or(path);
-    let decoded = percent_decode(path)?;
-    if decoded.chars().any(char::is_control) {
-        return None;
-    }
-    let local = host.is_empty() || host.eq_ignore_ascii_case("localhost") || host == "127.0.0.1";
-    if local {
-        drive_path(&decoded)
-    } else {
-        unc_path(host, &decoded)
-    }
-}
-
-/// 解析脚本标准输出。第一个有效目录即视为前台窗口；选区留空。
-pub fn context_from_explorer_output(stdout: &str) -> RawContext {
-    match stdout.lines().find_map(location_to_path) {
-        Some(native) => RawContext {
-            source_window_id: None,
-            directory: Some(RawPath {
-                native,
-                kind: PathKind::Directory,
-            }),
-            selection: Vec::new(),
-            view_kind: Some(ViewKind::Physical),
-            unavailable: None,
-        },
-        None => RawContext {
-            unavailable: Some(ContextAvailability::NoDirectory {
-                reason: "资源管理器没有打开文件夹".into(),
-            }),
-            ..RawContext::default()
-        },
-    }
-}
-
-fn drive_path(decoded: &str) -> Option<PathBuf> {
-    let segments = clean_segments(decoded)?;
-    let drive = *segments.first()?;
-    if !is_drive(drive) {
-        return None;
-    }
-    let mut path = String::from(drive);
-    if segments.len() == 1 {
-        path.push('\\');
-    } else {
-        for segment in &segments[1..] {
-            path.push('\\');
-            path.push_str(segment);
-        }
-    }
-    Some(PathBuf::from(path))
-}
-
-fn unc_path(host: &str, decoded: &str) -> Option<PathBuf> {
-    if host.is_empty()
-        || host == "."
-        || host == ".."
-        || host
-            .chars()
-            .any(|ch| ch.is_control() || ch == '\\' || ch == '/')
-    {
-        return None;
-    }
-    let segments = clean_segments(decoded)?;
-    let mut path = String::from("\\\\");
-    path.push_str(host);
-    for segment in segments {
-        path.push('\\');
-        path.push_str(segment);
-    }
-    Some(PathBuf::from(path))
-}
-
-fn clean_segments(decoded: &str) -> Option<Vec<&str>> {
-    if decoded.is_empty() {
-        return None;
-    }
-    let mut segments: Vec<&str> = decoded.split(['/', '\\']).collect();
-    if segments.last().copied() == Some("") {
-        segments.pop();
-    }
-    if segments.is_empty()
-        || segments
-            .iter()
-            .any(|segment| segment.is_empty() || *segment == "." || *segment == "..")
-    {
-        return None;
-    }
-    Some(segments)
-}
-
-fn is_drive(segment: &str) -> bool {
-    let bytes = segment.as_bytes();
-    bytes.len() == 2 && bytes[0].is_ascii_alphabetic() && bytes[1] == b':'
-}
-
-fn percent_decode(input: &str) -> Option<String> {
-    let bytes = input.as_bytes();
-    let mut out = Vec::with_capacity(bytes.len());
-    let mut index = 0;
-    while index < bytes.len() {
-        if bytes[index] == b'%' {
-            if index + 2 >= bytes.len() {
-                return None;
-            }
-            let high = hex_nibble(bytes[index + 1])?;
-            let low = hex_nibble(bytes[index + 2])?;
-            out.push((high << 4) | low);
-            index += 3;
-        } else {
-            out.push(bytes[index]);
-            index += 1;
-        }
-    }
-    String::from_utf8(out).ok()
-}
-
-fn hex_nibble(byte: u8) -> Option<u8> {
-    match byte {
-        b'0'..=b'9' => Some(byte - b'0'),
-        b'a'..=b'f' => Some(byte - b'a' + 10),
-        b'A'..=b'F' => Some(byte - b'A' + 10),
-        _ => None,
+fn failed(message: String) -> RawContext {
+    RawContext {
+        unavailable: Some(ContextAvailability::Failed { message }),
+        ..RawContext::default()
     }
 }
 
 impl ContextPort for WindowsContextPort {
+    fn source(&self) -> ContextSource {
+        ContextSource::Explorer
+    }
     fn capture(&self) -> RawContext {
-        #[cfg(target_os = "windows")]
+        #[cfg(windows)]
         {
-            let _ = self;
-            capture_explorer()
+            let (reply, receive) = std::sync::mpsc::channel();
+            if self.requests.try_send(reply).is_err() {
+                return failed("Explorer 正忙，请稍后重试".into());
+            }
+            receive
+                .recv_timeout(std::time::Duration::from_secs(3))
+                .unwrap_or_else(|_| failed("读取 Explorer 超时，请稍后重试".into()))
         }
-        #[cfg(not(target_os = "windows"))]
-        {
-            let _ = self;
-            RawContext {
-                unavailable: Some(ContextAvailability::NoDirectory {
-                    reason: "资源管理器仅在 Windows 上读取".into(),
-                }),
-                ..RawContext::default()
+        #[cfg(not(windows))]
+        failed("资源管理器仅在 Windows 上读取".into())
+    }
+    fn pick_directory(&self) -> DirectoryPick {
+        super::picker::pick_directory_blocking(self.main.as_ref())
+    }
+}
+
+#[cfg(windows)]
+fn capture_explorer() -> Result<RawContext, String> {
+    use fleqi_application::ports::RawPath;
+    use fleqi_domain::context::PathKind;
+    use windows::Win32::System::Com::{
+        CLSCTX_ALL, CoCreateInstance, CoTaskMemFree, IServiceProvider,
+    };
+    use windows::Win32::System::Variant::VARIANT;
+    use windows::Win32::UI::Shell::*;
+    use windows::Win32::UI::WindowsAndMessaging::{
+        FindWindowExW, GA_ROOT, GetAncestor, IsWindowVisible,
+    };
+    use windows::core::{Interface, w};
+    let target = super::surface::explorer_window()
+        .ok_or("没有可绑定的资源管理器窗口，请打开文件夹或手动选择目录")?;
+    let mut candidates = Vec::new();
+    // SAFETY: 所有 COM 接口在本 STA 内使用；只导出路径值，不保留原生指针。
+    unsafe {
+        // Windows 11 会保留非活动 view 的 WS_VISIBLE；活动 ShellTab 位于子窗口 Z 序最前。
+        // 必须匹配该标签的 IShellBrowser，不能按 ShellWindows 的枚举顺序选择目录。
+        let active_tab = FindWindowExW(Some(target), None, w!("ShellTabWindowClass"), None)
+            .map_err(|_| "无法识别资源管理器的活动标签页".to_string())?;
+        let windows: IShellWindows =
+            CoCreateInstance(&ShellWindows, None, CLSCTX_ALL).map_err(|e| e.to_string())?;
+        for index in 0..windows.Count().map_err(|e| e.to_string())? {
+            let candidate = (|| -> windows::core::Result<_> {
+                let dispatch = windows.Item(&VARIANT::from(index))?;
+                let browser: IWebBrowserApp = dispatch.cast()?;
+                if browser.HWND()?.0 != target.0 as isize {
+                    return Ok(None);
+                }
+                let provider: IServiceProvider = dispatch.cast()?;
+                let shell: IShellBrowser = provider.QueryService(&SID_STopLevelBrowser)?;
+                if shell.GetWindow()? != active_tab {
+                    return Ok(None);
+                }
+                let view = shell.QueryActiveShellView()?;
+                let view_window = view.GetWindow()?;
+                if !IsWindowVisible(view_window).as_bool()
+                    || GetAncestor(view_window, GA_ROOT) != target
+                {
+                    return Ok(None);
+                }
+                let folder: IFolderView2 = view.cast()?;
+                let persisted: IPersistFolder2 = folder.GetFolder()?;
+                let pidl = persisted.GetCurFolder()?;
+                let item: windows::core::Result<IShellItem> = SHCreateItemFromIDList(pidl);
+                CoTaskMemFree(Some(pidl.cast()));
+                let directory = super::native::item_path(&item?)?;
+                let selected = folder.GetSelection(false)?;
+                let count = selected.GetCount()?;
+                if count as usize > fleqi_domain::settings::limits::SELECTION_ITEMS {
+                    return Err(windows::core::Error::new(
+                        windows::core::HRESULT(0x80070057_u32 as i32),
+                        "选区超过 1000 项，请缩小范围",
+                    ));
+                }
+                let mut selection = Vec::new();
+                for index in 0..count {
+                    let native = super::native::item_path(&selected.GetItemAt(index)?)?;
+                    let kind = if native.is_dir() {
+                        PathKind::Directory
+                    } else {
+                        PathKind::File
+                    };
+                    selection.push(RawPath { native, kind });
+                }
+                Ok(Some((view_window, directory, selection)))
+            })();
+            match candidate {
+                Ok(Some(value)) => candidates.push(value),
+                Ok(None) => (),
+                Err(error) => {
+                    // 非文件系统视图也必须拒绝，不能回退成其它窗口的目录。
+                    if let Ok(dispatch) = windows.Item(&VARIANT::from(index))
+                        && let Ok(browser) = dispatch.cast::<IWebBrowserApp>()
+                        && browser.HWND().is_ok_and(|hwnd| hwnd.0 == target.0 as isize)
+                    {
+                        return Err(format!("无法完整读取当前 Explorer 目录或选区：{error}"));
+                    }
+                }
             }
         }
+        if FindWindowExW(Some(target), None, w!("ShellTabWindowClass"), None).ok()
+            != Some(active_tab)
+        {
+            return Err("读取期间活动标签页发生变化，请重试".into());
+        }
     }
-
-    fn pick_directory(&self) -> DirectoryPick {
-        pick_directory_blocking(self.main.as_ref())
+    if candidates.len() != 1 {
+        return Err("无法唯一确定资源管理器的活动标签页，请重新选择文件夹后重试".into());
     }
-}
-
-#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
-fn capture_explorer() -> RawContext {
-    match super::process::run_fixed_script(EXPLORER_LOCATIONS_SCRIPT, &[], false, true) {
-        Ok(output) if output.success => context_from_explorer_output(&output.stdout),
-        Ok(_) => failed_context("无法读取资源管理器窗口"),
-        Err(_) => failed_context("无法启动资源管理器读取"),
+    let (_view, directory, selection) = candidates.pop().expect("one candidate");
+    if !directory.is_dir() {
+        return Err("当前资源管理器位置不是可访问的文件夹".into());
     }
-}
-
-#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
-fn failed_context(message: &str) -> RawContext {
-    RawContext {
-        unavailable: Some(ContextAvailability::Failed {
-            message: message.to_owned(),
+    Ok(RawContext {
+        source_window_id: Some(target.0 as u64),
+        directory: Some(fleqi_application::ports::RawPath {
+            native: directory,
+            kind: fleqi_domain::context::PathKind::Directory,
         }),
-        ..RawContext::default()
-    }
+        selection,
+        view_kind: Some(fleqi_domain::context::ViewKind::Physical),
+        unavailable: None,
+    })
 }

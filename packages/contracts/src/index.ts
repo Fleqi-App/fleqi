@@ -68,6 +68,7 @@ export type { RunOriginWire } from "./bindings/RunOriginWire";
 export type { RunRecord } from "./bindings/RunRecord";
 export type { RunState } from "./bindings/RunState";
 export type { RunStepResult } from "./bindings/RunStepResult";
+export type { ScriptRuntime } from "./bindings/ScriptRuntime";
 export type { Session } from "./bindings/Session";
 export type { SessionState } from "./bindings/SessionState";
 export type { Settings } from "./bindings/Settings";

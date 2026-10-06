@@ -10,6 +10,7 @@ import { Button } from "../../components/Button";
 import { Card } from "../../components/Card";
 import { EmptyState, InlineStatus } from "../../components/InlineStatus";
 import type { CatalogEntry } from "../../adapters/host";
+import { fileManagerLabel } from "../../platform-copy";
 import { isAppError, newRequestId } from "../../adapters/host";
 import { useHost } from "../../store/host";
 import { categoryLabel } from "./catalog";
@@ -114,11 +115,12 @@ export function LibraryPage() {
                     .map((entry) => (
                       <li key={entry.id} className="rounded-md border border-border px-2 py-1.5 text-sm" data-testid="catalog-entry" data-capability-id={entry.id}>
                         <div className="flex items-center justify-between gap-2">
-                          <button type="button" className="min-h-7 text-left font-medium text-navigation-icon hover:underline" onClick={() => setSelected(entry)}>{entry.title}</button>
+                          <button type="button" disabled={entry.availability === "unsupported"} className="min-h-7 text-left font-medium text-navigation-icon hover:underline disabled:opacity-50 disabled:no-underline" onClick={() => setSelected(entry)}>{entry.title}</button>
                           {entry.dependencies.length > 0 && <Badge tone="warning">{entry.dependencies.join("、")}</Badge>}
                         </div>
                         <p className="mt-0.5 text-xs text-muted-foreground">{entry.description}</p>
                         <p className="mt-2 text-xs text-muted-foreground">输入：{entry.inputs}</p>
+                        {entry.unavailableReason && <p className="mt-1 text-xs text-muted-foreground">{entry.unavailableReason}</p>}
                       </li>
                     ))}
                 </ul>
@@ -209,11 +211,11 @@ export function LibraryPage() {
           </Button>
         </div>
         <label className="mb-3 flex items-center gap-2 text-sm">收藏类型<NativeSelect aria-label="收藏类型" value={favoriteKind} onChange={(event) => setFavoriteKind(event.target.value as "ai" | "manual")} className="rounded-md border border-border bg-input p-2"><option value="ai">自然语言任务</option><option value="manual">手动终端命令</option></NativeSelect></label>
-        {reuse && <div className="mb-3 space-y-2 rounded-lg border border-border p-3"><p className="text-sm">复用「{reuse.name}」· {reuse.kind === "manual" ? "手动命令将直接发送终端" : "按当前上下文与 AI 策略生成计划"}</p><Textarea aria-label="复用内容" value={reuse.content} onChange={(event) => setReuse({ ...reuse, content: event.target.value })} className="min-h-24 w-full rounded-md border border-border bg-input p-2 text-sm" /><p className="break-all text-xs text-muted-foreground">提交时绑定最新 Finder 工作目录；原收藏保持不变。</p>{reuseMessage && <p className="whitespace-pre-wrap text-sm">{reuseMessage}</p>}<Button disabled={reuseBusy || !reuse.content.trim()} onClick={() => { void (async () => {
+        {reuse && <div className="mb-3 space-y-2 rounded-lg border border-border p-3"><p className="text-sm">复用「{reuse.name}」· {reuse.kind === "manual" ? "手动命令将直接发送终端" : "按当前上下文与 AI 策略生成计划"}</p><Textarea aria-label="复用内容" value={reuse.content} onChange={(event) => setReuse({ ...reuse, content: event.target.value })} className="min-h-24 w-full rounded-md border border-border bg-input p-2 text-sm" /><p className="break-all text-xs text-muted-foreground">提交时绑定最新 {fileManagerLabel(host.bootstrap?.buildInfo.targetOs)} 工作目录；原收藏保持不变。</p>{reuseMessage && <p className="whitespace-pre-wrap text-sm">{reuseMessage}</p>}<Button disabled={reuseBusy || !reuse.content.trim()} onClick={() => { void (async () => {
           setReuseBusy(true); setError(null); setReuseMessage(null);
           try {
             const context = await host.adapter.contextRefresh();
-            if (!context.directoryRef) throw new Error("请先在 Finder 打开工作文件夹");
+            if (!context.directoryRef) throw new Error(`请先在 ${fileManagerLabel(host.bootstrap?.buildInfo.targetOs)} 打开工作文件夹`);
             const session = await host.adapter.sessionCreate(newRequestId("favorite-session"));
             if (reuse.kind === "manual") {
               await host.adapter.sessionSelect(newRequestId("favorite-select"), session.id);

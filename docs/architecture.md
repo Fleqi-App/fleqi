@@ -286,6 +286,17 @@ SQLite 表组：`settings`、`sessions`、`conversation_entries`、`runs`、`run
 
 ## 10. 平台与发布合同
 
+### Windows 11 x64 修复实现（2026-10-06）
+
+- `fleqi-platform` 的 Windows 模块直接调用 Credential Manager 和 Shell COM；COM 对象留在专用 STA，仅向应用层返回路径和状态。Explorer 按真实前台窗口和可见活动 Shell view 匹配，无法唯一匹配或读取完整选区时拒绝生成上下文；不使用窗口枚举第一项作为当前目录。
+- `ContextSource` 新增 `explorer`，保留 `finder`、`picker`。手动选择的有效目录在 Explorer 暂不可用时仍可作为明确的工作上下文。窗口几何通过 Win32 读取物理像素和 DPI；自动显示用不激活窗口的方式，手动独立显示不依赖 Explorer 窗口存在。
+- Windows 持续终端复用 ConPTY 和系统 PowerShell 5.1。宿主完成 ConPTY 光标握手；提示符/编辑状态和目录请求使用当前用户命名管道，并验证连接进程为本会话 shell。PSReadLine 的空闲处理器重新核对真实编辑行后应用目录请求，普通终端输出不能充当状态回执。shell 自然退出和主动结束均关闭 ConPTY 并回收输出线程。
+- Windows 一次性任务使用独立管道进程，在挂起启动期间加入独占 Job 后恢复；取消句柄与等待句柄分离。临时 PowerShell 文件使用明确编码、逐任务生命周期及进程级执行策略，不修改用户 profile 或系统持久策略。
+- `ExecutionStep.scriptRuntime` 为可空兼容字段，取值 `posixSh`、`windowsPowerShell`，由宿主填写。Windows 不重试未声明解释器或声明不兼容解释器的旧脚本，要求重新规划。PowerShell 自由脚本不复用 Unix 只读白名单；默认先确认，`yolo` 和用户原始终端输入语义不变。
+- 能力目录通过已有 `CapabilityState` 附带可用状态及原因，Windows 仅开放能力台账指定的 21 项；模型收到同一可用清单，执行器再次核对。工具安装支持由设施端口报告，Windows 不启动 Homebrew 准备流程。Windows 自动更新频道尚未配置，使用 NSIS 安装包更新。
+
+以下矩阵描述平台长期目标；Windows 本轮范围以上述修复合同为准，Linux 不在本轮扩展范围。
+
 | 能力 | macOS 首版实现 | Windows/Linux 后续适配 |
 |---|---|---|
 | 文件管理器上下文 | Finder Apple Events 获取目录/选择；Accessibility 与窗口事件获取几何/活动状态 | Windows Shell/Explorer；Linux 按桌面/文件管理器逐项报告能力 |

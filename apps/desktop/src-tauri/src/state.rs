@@ -299,7 +299,7 @@ impl AppState {
                             state.surface.on_context_changed(&snapshot);
                         }
                     });
-                } else {
+                } else if state.composer_attached.load(Ordering::Acquire) {
                     state.surface.system_hide();
                 }
             }
@@ -571,11 +571,41 @@ impl AppState {
     pub fn platform_capabilities(&self) -> fleqi_domain::platform::PlatformCapabilities {
         let permissions = self.permissions.snapshot();
         let credentials = self.credentials.lock().expect("credentials 锁").clone();
-        derive_capabilities(
+        let capabilities = derive_capabilities(
             Revision::new(permissions.revision.value()),
             &permissions,
             &credentials,
-        )
+        );
+        #[cfg(windows)]
+        let capabilities = {
+            use fleqi_domain::platform::CapabilityState;
+            let mut capabilities = capabilities;
+            let explorer = self.context.latest().is_some_and(|context| {
+                context.source == fleqi_domain::context::ContextSource::Explorer
+                    && matches!(
+                        context.availability,
+                        fleqi_domain::context::ContextAvailability::Available
+                    )
+            });
+            let geometry = fleqi_platform::host::file_manager_frame().has_window;
+            for item in &mut capabilities.items {
+                let available = match item.id.as_str() {
+                    "finderContext" => explorer,
+                    "accessibilityGeometry" => geometry,
+                    _ => continue,
+                };
+                item.state = if available {
+                    CapabilityState::Supported
+                } else {
+                    CapabilityState::TemporarilyUnavailable
+                };
+                item.reason = (!available).then(|| "当前没有可用的 Explorer 文件夹窗口".into());
+                item.recovery =
+                    (!available).then(|| "打开资源管理器中的真实文件夹，或手动选择目录".into());
+            }
+            capabilities
+        };
+        capabilities
     }
 
     /// 刷新 Finder 上下文并路由到显示状态机：目录同步与 followFinder 自动显示

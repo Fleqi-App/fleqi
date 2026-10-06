@@ -146,7 +146,8 @@ impl FileCapabilities {
                 .map(PathBuf::from)
                 .unwrap_or_else(|| "untitled".into());
             let destination = unique_destination(target, &name);
-            let result = copy_recursive(&source, &destination);
+            let result = reject_nested_destination(&source, target)
+                .and_then(|_| copy_recursive(&source, &destination));
             items.push(ItemResult {
                 source,
                 destination: Some(destination),
@@ -180,13 +181,15 @@ impl FileCapabilities {
                 .map(PathBuf::from)
                 .unwrap_or_else(|| "untitled".into());
             let destination = unique_destination(target, &name);
-            let result = std::fs::rename(&source, &destination).or_else(|_| {
-                copy_recursive(&source, &destination)?;
-                if source.is_dir() {
-                    std::fs::remove_dir_all(&source)
-                } else {
-                    std::fs::remove_file(&source)
-                }
+            let result = reject_nested_destination(&source, target).and_then(|_| {
+                std::fs::rename(&source, &destination).or_else(|_| {
+                    copy_recursive(&source, &destination)?;
+                    if source.is_dir() {
+                        std::fs::remove_dir_all(&source)
+                    } else {
+                        std::fs::remove_file(&source)
+                    }
+                })
             });
             items.push(ItemResult {
                 source,
@@ -478,6 +481,9 @@ impl FileCapabilities {
         target: &Path,
     ) -> Result<BatchReport, CapabilityError> {
         std::fs::create_dir_all(target).map_err(|e| CapabilityError::Failed(e.to_string()))?;
+        let target = target
+            .canonicalize()
+            .map_err(|e| CapabilityError::Failed(e.to_string()))?;
         let file =
             std::fs::File::open(archive).map_err(|e| CapabilityError::Failed(e.to_string()))?;
         let mut reader =
@@ -488,10 +494,10 @@ impl FileCapabilities {
                 .by_index(index)
                 .map_err(|e| CapabilityError::Failed(e.to_string()))?;
             let name = entry.name().to_owned();
-            let destination = target.join(&name);
-            // 越界路径（.. 或绝对）不写到目标之外。
-            let safe = destination.starts_with(target) && !name.split('/').any(|part| part == "..");
-            if !safe {
+            let destination = entry
+                .enclosed_name()
+                .and_then(|relative| safe_zip_destination(&target, &relative, &name));
+            let Some(destination) = destination else {
                 items.push(ItemResult {
                     source: archive.to_path_buf(),
                     destination: None,
@@ -499,7 +505,7 @@ impl FileCapabilities {
                     message: Some(format!("越界条目拒绝：{name}")),
                 });
                 continue;
-            }
+            };
             let result = (|| -> std::io::Result<PathBuf> {
                 if entry.is_dir() {
                     std::fs::create_dir_all(&destination)?;
@@ -1268,7 +1274,22 @@ impl TrashReport {
     }
 }
 
+fn reject_nested_destination(source: &Path, target: &Path) -> std::io::Result<()> {
+    if source.is_dir() && target.canonicalize()?.starts_with(source.canonicalize()?) {
+        return Err(std::io::Error::other("不能把目录复制或移动到自身内部"));
+    }
+    Ok(())
+}
+
 fn copy_recursive(source: &Path, destination: &Path) -> std::io::Result<()> {
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt;
+        let metadata = std::fs::symlink_metadata(source)?;
+        if metadata.file_attributes() & 0x400 != 0 {
+            return Err(std::io::Error::other("复制不会跟随重解析点"));
+        }
+    }
     if source.is_dir() {
         std::fs::create_dir_all(destination)?;
         for entry in std::fs::read_dir(source)? {
@@ -1301,10 +1322,24 @@ fn append_to_zip<W: Write + Seek>(
     base: &Path,
     options: zip::write::FileOptions<'_, ()>,
 ) -> Result<(), CapabilityError> {
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt;
+        let metadata = std::fs::symlink_metadata(source)
+            .map_err(|e| CapabilityError::Failed(e.to_string()))?;
+        if metadata.file_attributes() & 0x400 != 0 {
+            return Err(CapabilityError::InvalidInput(
+                "ZIP 打包不会跟随重解析点".into(),
+            ));
+        }
+    }
     let relative = source.strip_prefix(base).unwrap_or(source);
+    let name = relative.to_string_lossy().into_owned();
+    #[cfg(windows)]
+    let name = name.replace('\\', "/");
     if source.is_dir() {
         writer
-            .add_directory(relative.to_string_lossy().into_owned(), options)
+            .add_directory(name, options)
             .map_err(|e| CapabilityError::Failed(e.to_string()))?;
         for entry in
             std::fs::read_dir(source).map_err(|e| CapabilityError::Failed(e.to_string()))?
@@ -1316,7 +1351,7 @@ fn append_to_zip<W: Write + Seek>(
         let mut file =
             std::fs::File::open(source).map_err(|e| CapabilityError::Failed(e.to_string()))?;
         writer
-            .start_file(relative.to_string_lossy().into_owned(), options)
+            .start_file(name, options)
             .map_err(|e| CapabilityError::Failed(e.to_string()))?;
         std::io::copy(&mut file, writer).map_err(|e| CapabilityError::Failed(e.to_string()))?;
     }
@@ -1369,6 +1404,68 @@ fn extract_paragraphs(xml: &str) -> String {
     lines.join("\n")
 }
 
+#[cfg(windows)]
+pub(crate) fn valid_windows_filename(text: &str) -> bool {
+    let base = text
+        .split('.')
+        .next()
+        .unwrap_or_default()
+        .to_ascii_uppercase();
+    !text.is_empty()
+        && !text.contains(['<', '>', ':', '"', '/', '\\', '|', '?', '*'])
+        && !text.chars().any(|c| c < ' ')
+        && !text.ends_with([' ', '.'])
+        && !matches!(base.as_str(), "CON" | "PRN" | "AUX" | "NUL")
+        && !base
+            .strip_prefix("COM")
+            .or_else(|| base.strip_prefix("LPT"))
+            .is_some_and(|n| {
+                matches!(
+                    n,
+                    "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" | "¹" | "²" | "³"
+                )
+            })
+}
+
+fn safe_zip_destination(root: &Path, relative: &Path, name: &str) -> Option<PathBuf> {
+    if name.contains('\\')
+        || Path::new(name)
+            .components()
+            .any(|part| !matches!(part, std::path::Component::Normal(_)))
+        || relative
+            .components()
+            .any(|part| !matches!(part, std::path::Component::Normal(_)))
+    {
+        return None;
+    }
+    let mut destination = root.to_path_buf();
+    for part in relative.components() {
+        let std::path::Component::Normal(part) = part else {
+            return None;
+        };
+        #[cfg(windows)]
+        {
+            if !valid_windows_filename(part.to_str()?) {
+                return None;
+            }
+        }
+        destination.push(part);
+        if let Ok(metadata) = std::fs::symlink_metadata(&destination) {
+            if metadata.file_type().is_symlink() {
+                return None;
+            }
+            #[cfg(windows)]
+            {
+                use std::os::windows::fs::MetadataExt;
+                if metadata.file_attributes() & 0x400 != 0 {
+                    return None;
+                }
+            }
+        }
+    }
+    Some(destination)
+}
+
 fn move_to_trash(source: &Path) -> Result<(), String> {
     if !source.exists() {
         return Err(format!("找不到 {}", source.display()));
@@ -1403,7 +1500,7 @@ fn move_to_trash(source: &Path) -> Result<(), String> {
     }
     #[cfg(target_os = "windows")]
     {
-        return windows_recycle(source);
+        windows_recycle(source)
     }
     #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
     {
@@ -1414,6 +1511,9 @@ fn move_to_trash(source: &Path) -> Result<(), String> {
 
 fn trash_lookup_dirs() -> Vec<PathBuf> {
     let mut dirs = Vec::new();
+    if cfg!(windows) {
+        return dirs;
+    }
     if let Ok(home) = std::env::var("HOME") {
         let home = PathBuf::from(home);
         dirs.push(home.join(".Trash"));
@@ -1482,52 +1582,34 @@ fn freedesktop_trash(source: &Path) -> Result<(), String> {
 
 #[cfg(target_os = "windows")]
 fn windows_recycle(source: &Path) -> Result<(), String> {
-    let path = source
-        .canonicalize()
-        .map_err(|error| format!("无法解析回收站路径：{error}"))?;
-    // The script is a constant. The path arrives only as an environment variable.
-    let mut child = std::process::Command::new("powershell.exe")
-        .args(["-NoProfile", "-NonInteractive", "-Command", "-"])
-        .env("FLEQI_TRASH_PATH", &path)
-        .stdin(std::process::Stdio::piped())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .spawn()
-        .map_err(|error| format!("无法启动资源管理器回收站：{error}"))?;
-    if let Some(mut stdin) = child.stdin.take() {
-        use std::io::Write;
-        stdin
-            .write_all(WINDOWS_RECYCLE_SCRIPT.as_bytes())
-            .map_err(|error| error.to_string())?;
-    }
-    let output = child
-        .wait_with_output()
-        .map_err(|error| error.to_string())?;
-    if output.status.success() {
-        Ok(())
-    } else {
-        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_owned();
-        Err(if stderr.is_empty() {
-            "资源管理器回收站拒绝了这项操作".into()
-        } else {
-            stderr
-        })
-    }
+    let source = source.to_path_buf();
+    // 每次操作使用独立 STA，不依赖调用方的 COM 模式，也不阻塞宿主主线程。
+    std::thread::spawn(move || {
+        use windows::Win32::System::Com::{CoInitializeEx, CoUninitialize, CoCreateInstance, COINIT_APARTMENTTHREADED, CLSCTX_INPROC_SERVER};
+        use windows::Win32::UI::Shell::*;
+        use std::os::windows::ffi::OsStrExt;
+        if source.components().any(|part| matches!(part, std::path::Component::Prefix(prefix) if matches!(prefix.kind(), std::path::Prefix::UNC(_, _) | std::path::Prefix::VerbatimUNC(_, _)))) {
+            return Err("网络位置无法保证进入系统回收站，原文件已保留".into());
+        }
+        struct Apartment;
+        impl Drop for Apartment { fn drop(&mut self) { unsafe { CoUninitialize() } } }
+        // SAFETY: 接口和字符串在本 STA 中有效；只请求回收，失败不改用永久删除。
+        unsafe {
+            CoInitializeEx(None, COINIT_APARTMENTTHREADED).ok().map_err(|e| e.to_string())?;
+            let _apartment = Apartment;
+            let wide = source.as_os_str().encode_wide().chain(Some(0)).collect::<Vec<_>>();
+            let item: IShellItem = SHCreateItemFromParsingName(windows::core::PCWSTR(wide.as_ptr()), None).map_err(|e| e.to_string())?;
+            let operation: IFileOperation = CoCreateInstance(&FileOperation, None, CLSCTX_INPROC_SERVER).map_err(|e| e.to_string())?;
+            operation.SetOperationFlags(FOFX_RECYCLEONDELETE | FOFX_ADDUNDORECORD | FOFX_EARLYFAILURE | FOF_NOERRORUI | FOF_NOCONFIRMATION | FOF_SILENT).map_err(|e| e.to_string())?;
+            operation.DeleteItem(&item, None).map_err(|e| e.to_string())?;
+            operation.PerformOperations().map_err(|e| e.to_string())?;
+            if operation.GetAnyOperationsAborted().map_err(|e| e.to_string())?.as_bool() || source.exists() {
+                return Err("回收操作取消或未完成，未改用永久删除".into());
+            }
+            Ok(())
+        }
+    }).join().map_err(|_| "回收站操作线程异常".to_owned())?
 }
-
-#[cfg(target_os = "windows")]
-const WINDOWS_RECYCLE_SCRIPT: &str = r#"
-$ErrorActionPreference = 'Stop'
-$path = $env:FLEQI_TRASH_PATH
-if (-not $path) { throw 'missing path' }
-Add-Type -AssemblyName Microsoft.VisualBasic
-if (Test-Path -LiteralPath $path -PathType Container) {
-  [Microsoft.VisualBasic.FileIO.FileSystem]::DeleteDirectory($path,'OnlyErrorDialogs','SendToRecycleBin')
-} else {
-  [Microsoft.VisualBasic.FileIO.FileSystem]::DeleteFile($path,'OnlyErrorDialogs','SendToRecycleBin')
-}
-exit 0
-"#;
 
 #[cfg(target_os = "linux")]
 fn utc_stamp() -> String {

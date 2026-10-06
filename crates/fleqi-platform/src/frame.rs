@@ -15,4 +15,6 @@ pub struct HostFrame {
     pub foreground: i32,
     pub has_window: bool,
     pub mouse_down: bool,
+    /// Windows 坐标为物理像素；其它平台保持原有坐标，比例为 1。
+    pub scale: f64,
 }

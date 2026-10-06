@@ -106,6 +106,9 @@ pub enum DirectoryPick {
 }
 
 pub trait ContextPort: Send + Sync {
+    fn source(&self) -> fleqi_domain::context::ContextSource {
+        fleqi_domain::context::ContextSource::Finder
+    }
     fn capture(&self) -> RawContext;
     fn pick_directory(&self) -> DirectoryPick;
 }
@@ -297,6 +300,32 @@ pub enum ProcessStreamKind {
 
 /// 一次性进程端口（AI 计划步骤；手动终端走 TerminalPort）。
 pub trait ProcessPort: Send + Sync {
+    fn spawn_script(
+        &self,
+        runtime: fleqi_domain::execution::ScriptRuntime,
+        script: &str,
+        cwd: &std::path::Path,
+        events: Sender<ProcessEvent>,
+    ) -> Result<Box<dyn ProcessHandle>, String> {
+        use fleqi_domain::execution::ScriptRuntime;
+        match runtime {
+            ScriptRuntime::PosixSh => {
+                self.spawn("/bin/sh", &["-c".into(), script.into()], cwd, &[], events)
+            }
+            ScriptRuntime::WindowsPowerShell => self.spawn(
+                "powershell.exe",
+                &[
+                    "-NoProfile".into(),
+                    "-NonInteractive".into(),
+                    "-Command".into(),
+                    script.into(),
+                ],
+                cwd,
+                &[],
+                events,
+            ),
+        }
+    }
     fn spawn(
         &self,
         executable: &str,
@@ -384,6 +413,9 @@ pub enum InstallProgress {
 }
 
 pub trait ToolFacility: Send + Sync {
+    fn supports_install(&self) -> bool {
+        true
+    }
     /// 探测工具真实状态（系统 PATH 或受管安装目录 + 检测参数真实执行）。
     fn detect(
         &self,

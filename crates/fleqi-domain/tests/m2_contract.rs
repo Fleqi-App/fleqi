@@ -24,6 +24,33 @@ fn settings(activation: Activation, hotkey: bool, bar_enabled: bool) -> Settings
 // ---------- 显示状态机 ----------
 
 #[test]
+fn changing_activation_while_disabling_clears_previous_hide_suppression() {
+    let mut machine = SurfaceMachine::new(&settings(Activation::Manual, true, true), true);
+    machine.apply(SurfaceEvent::UserShow);
+    machine.apply(SurfaceEvent::UserHide);
+    assert!(machine.auto_show_suppressed());
+    machine.apply(SurfaceEvent::SettingsChanged {
+        settings: settings(Activation::FollowFinder, true, false),
+        has_valid_directory: true,
+    });
+    assert!(!machine.auto_show_suppressed());
+    assert_eq!(machine.visibility(), Visibility::UserHidden);
+    machine.apply(SurfaceEvent::SettingsChanged {
+        settings: settings(Activation::FollowFinder, true, true),
+        has_valid_directory: true,
+    });
+    assert!(matches!(
+        machine.apply(SurfaceEvent::ContextDirectoryChanged {
+            has_valid_directory: true
+        }),
+        SurfaceOutcome::Show {
+            focus_input: false,
+            ..
+        }
+    ));
+}
+
+#[test]
 fn manual_without_hotkey_never_auto_shows_and_manual_show_needs_hotkey() {
     let mut m = SurfaceMachine::new(&settings(Activation::Manual, false, true), true);
     assert_eq!(m.visibility(), Visibility::UserHidden);

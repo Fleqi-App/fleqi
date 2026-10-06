@@ -5,6 +5,28 @@
 
 本文件汇总产品界面与交互验收（M4）与发布验收（M5）的证据索引、执行方式与已知边界。所有原生证据由 `pnpm test:desktop`（scripts/test-desktop.mjs）生成于 `tests/.artifacts/desktop/`，UI 单测/组件证据由 `pnpm test:ui` 生成。证据文件为运行产物（.gitignore 忽略），本文记录其文件名与核对方式；重新运行即可再生。
 
+## Windows 11 x64 核心修复验证
+
+2026-10-06–07：本轮开放范围为能力台账的 21 项基础能力，完整 Windows 首版不在本轮通过口径中。
+
+| 层次 | 执行入口 | 核对内容与证据 |
+|---|---|---|
+| 共享业务 | `cargo test --locked -p fleqi-domain -p fleqi-application` | 状态机、策略、上下文、会话/任务、持久化接口及旧脚本解释器兼容；Windows 自由脚本先确认，不把原 POSIX 白名单当成 Windows 证明 |
+| Windows 平台 | `cargo test --locked -p fleqi-platform --test windows_platform` | 真实 Credential Manager 隔离命名空间增删改查，测试项清理，不使用生产凭据键 |
+| Windows 执行/文件 | `cargo test --locked -p fleqi-adapters --test windows_core -- --test-threads=1` | 真实 PowerShell、ConPTY 光标握手、编辑行/忙碌保护、中文目录与实际文件、exit 回收、Job 子进程取消、文件/ZIP/图片/PDF、系统回收站往返；本机 C:→E: 跨卷、占用文件保留原件、中文长路径、目录 ZIP 往返及 junction 越界拒绝 |
+| 同名输出 | `cargo test --locked -p fleqi-adapters --test name_conflict` | 经生产 NativeSteps 验证同名覆盖、保留原件和失败/取消不截断已有文件 |
+| 前端 | `pnpm --filter @fleqi/ui run test:unit`、`pnpm typecheck` | 现有界面行为及类型；Windows 界面由原生用例补充，不将浏览器 preview 作为宿主证据 |
+| 桌面 | `pnpm run test:desktop` | WebView2 + embedded WebDriver + 真实 IPC；独立数据目录、自建 Explorer 窗口及双标签页、原生目录选择/取消、回环模型 HTTP、文件结果、输入条跟随与重启恢复；证据 `windows-*.json/png` |
+| 普通安装包 | `pnpm run verify:package` | 普通 release 包的 PE、载荷哈希、安装/覆盖、真实 IPC 就绪、正常退出和卸载；证据 `tests/.artifacts/package/windows-package-evidence.json` |
+
+`windows-follow-condition.json` 单独记录 Explorer 前台条件。驱动无法把自建窗口置于前台时，跟随/移动/目录同步用例记为未验证，不计通过，也不阻止其它独立功能验证。测试窗口只操作 `windows-data-*/fixtures/`，不关闭用户窗口；模型服务仅验证 HTTP/规划/审批/执行链路，不代表外部模型质量验收。
+
+最终结果：共享业务 105 项、Windows 凭据 2 项、Windows 核心 8 项、输出名称/冲突 4 项、宿主单测 5 项，共 124 项 Rust 测试通过；UI 47 项、WebView2 原生 10 项通过。最终 `windows-follow-condition.json` 的 `verified=true`，无跳过项。原生目录选择器分别核对真实中文目录返回值和取消后上下文不变。
+
+额外尝试的 `cargo test -p fleqi-desktop` 中，既有 macOS 更新器集成测试 `tests/updater.rs` 在 Windows 加载阶段返回 `0xc0000139`，未计通过；Windows 自动更新已明确关闭，本轮没有改写或绕过该 macOS 发行测试。宿主本身的 5 项单测通过。
+
+剩余人工/设备条件：100%/150% 与混合 DPI、多屏边界、原生 IME/读屏、托盘鼠标交互、UNC 网络共享和外部真实模型；本机已覆盖单屏 200% 缩放。macOS CI 已保留，本机没有运行 macOS 原生回归，新 Windows CI 尚未远程执行。条件项完成前不得声明完整 Windows 验收通过。
+
 ## 1. AC-FLOW 原生矩阵（真实 IPC + 真实 zsh + 真实 Finder）
 
 | 验收 | 证据文件 | 覆盖内容 |

@@ -14,6 +14,7 @@ fn plan_with_effects(effects: Vec<Effect>) -> ExecutionPlan {
         capability_id: None,
         context_id: "ctx-1".into(),
         steps: vec![ExecutionStep {
+            script_runtime: Some(fleqi_domain::execution::ScriptRuntime::PosixSh),
             kind: StepKind::Script,
             operation: String::new(),
             executable_ref: None,
@@ -141,6 +142,7 @@ fn run_state_machine_rejects_invalid_transitions() {
 #[test]
 fn plan_steps_carry_native_process_script_kinds() {
     let native = ExecutionStep {
+        script_runtime: None,
         kind: StepKind::Native,
         operation: "fs.copy".into(),
         executable_ref: None,
@@ -152,6 +154,7 @@ fn plan_steps_carry_native_process_script_kinds() {
         expected_outputs: vec!["out-1".into()],
     };
     let process = ExecutionStep {
+        script_runtime: None,
         kind: StepKind::Process,
         operation: String::new(),
         executable_ref: Some("/bin/ls".into()),
@@ -163,6 +166,7 @@ fn plan_steps_carry_native_process_script_kinds() {
         expected_outputs: vec![],
     };
     let script = ExecutionStep {
+        script_runtime: Some(fleqi_domain::execution::ScriptRuntime::PosixSh),
         kind: StepKind::Script,
         operation: String::new(),
         executable_ref: None,

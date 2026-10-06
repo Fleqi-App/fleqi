@@ -5,6 +5,8 @@
 pub mod integration;
 pub mod osc;
 pub mod segments;
+#[cfg(windows)]
+mod windows_control;
 
 use fleqi_domain::directory_sync::{DirectorySync, ShellReadiness};
 use fleqi_domain::revision::Revision;
@@ -71,26 +73,34 @@ struct Inner {
     session_id: String,
     terminal_id: String,
     shell_pid: u32,
-    master: Mutex<Box<dyn MasterPty + Send>>,
+    master: Mutex<Option<Box<dyn MasterPty + Send>>>,
     state: Mutex<State>,
     events: Sender<TerminalEvent>,
 }
 
 pub struct TerminalManager {
     inner: Arc<Inner>,
-    child: Mutex<Box<dyn Child + Send + Sync>>,
-    writer: Mutex<Box<dyn Write + Send>>,
+    child: Arc<Mutex<Box<dyn Child + Send + Sync>>>,
+    writer: Arc<Mutex<Box<dyn Write + Send>>>,
     reader: Option<JoinHandle<()>>,
     /// Unix PTY 设备名，用于结束时回收仍附着该 tty 的进程。Windows ConPTY 没有对应路径。
     #[cfg_attr(not(unix), allow(dead_code))]
     tty: Option<PathBuf>,
     shell: integration::ShellKind,
+    #[cfg(windows)]
+    control: windows_control::Control,
+    #[cfg(windows)]
+    job: crate::windows_job::Job,
 }
 
 impl TerminalManager {
     pub fn spawn(options: TerminalOptions) -> Result<Self, TerminalError> {
         std::fs::create_dir_all(&options.data_dir)?;
         let shell = integration::detect_shell();
+        #[cfg(windows)]
+        let control = windows_control::Control::new()?;
+        #[cfg(windows)]
+        let job = crate::windows_job::Job::new()?;
         let pty = native_pty_system();
         let pair = pty
             .openpty(PtySize {
@@ -124,9 +134,18 @@ impl TerminalManager {
             }
             integration::ShellKind::PowerShell => {
                 let profile = integration::install_powershell(&options.data_dir)?;
-                let mut cmd = CommandBuilder::new("powershell.exe");
-                cmd.args(["-NoLogo", "-NoExit", "-NoProfile", "-File"]);
+                let mut cmd = CommandBuilder::new(crate::environment::powershell());
+                cmd.args([
+                    "-NoLogo",
+                    "-NoExit",
+                    "-NoProfile",
+                    "-ExecutionPolicy",
+                    "Bypass",
+                    "-File",
+                ]);
                 cmd.arg(profile);
+                #[cfg(windows)]
+                cmd.env("FLEQI_PIPE_NAME", &control.name);
                 cmd
             }
         };
@@ -149,16 +168,41 @@ impl TerminalManager {
         let shell_pid = child
             .process_id()
             .ok_or_else(|| TerminalError::Pty("无法取得 shell pid".into()))?;
-        let reader = pair
-            .master
+        #[cfg(windows)]
+        {
+            let mut child = child;
+            if let Err(error) = child
+                .as_raw_handle()
+                .ok_or_else(|| std::io::Error::other("无法取得终端进程句柄"))
+                .and_then(|handle| job.assign(handle))
+            {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(error.into());
+            }
+            Self::finish_spawn(options, shell, pair.master, child, shell_pid, control, job)
+        }
+        #[cfg(not(windows))]
+        Self::finish_spawn(options, shell, pair.master, child, shell_pid)
+    }
+
+    fn finish_spawn(
+        options: TerminalOptions,
+        shell: integration::ShellKind,
+        master: Box<dyn MasterPty + Send>,
+        child: Box<dyn Child + Send + Sync>,
+        shell_pid: u32,
+        #[cfg(windows)] control: windows_control::Control,
+        #[cfg(windows)] job: crate::windows_job::Job,
+    ) -> Result<Self, TerminalError> {
+        let reader = master
             .try_clone_reader()
             .map_err(|e| TerminalError::Pty(e.to_string()))?;
-        let writer = pair
-            .master
+        let writer = master
             .take_writer()
             .map_err(|e| TerminalError::Pty(e.to_string()))?;
         #[cfg(unix)]
-        let tty = pair.master.tty_name();
+        let tty = master.tty_name();
         #[cfg(not(unix))]
         let tty = None;
 
@@ -170,7 +214,7 @@ impl TerminalManager {
             session_id: options.session_id.clone(),
             terminal_id: format!("term-{}-{shell_pid}", options.session_id),
             shell_pid,
-            master: Mutex::new(pair.master),
+            master: Mutex::new(Some(master)),
             state: Mutex::new(State {
                 prompt_ready: false,
                 edit_len: 0,
@@ -193,16 +237,41 @@ impl TerminalManager {
             events: options.events,
         });
         let reader_inner = Arc::clone(&inner);
+        let child = Arc::new(Mutex::new(child));
+        #[cfg(windows)]
+        {
+            let child = Arc::clone(&child);
+            let inner = Arc::clone(&inner);
+            std::thread::spawn(move || {
+                let status = child
+                    .lock()
+                    .expect("child")
+                    .wait()
+                    .ok()
+                    .map(|status| status.exit_code() as i32);
+                inner.state.lock().expect("state").exited = Some(status);
+                // Windows 的客户端退出不会自行关闭 ConPTY；先关闭控制台，reader 才能收到 EOF。
+                inner.master.lock().expect("master").take();
+            });
+        }
+        let writer = Arc::new(Mutex::new(writer));
+        let reader_writer = Arc::clone(&writer);
+        #[cfg(windows)]
+        control.start(Arc::downgrade(&inner), shell_pid)?;
         let reader_thread = std::thread::Builder::new()
             .name(format!("fleqi-pty-reader-{shell_pid}"))
-            .spawn(move || read_loop(reader_inner, reader))?;
+            .spawn(move || read_loop(reader_inner, reader, reader_writer))?;
         Ok(Self {
             inner,
-            child: Mutex::new(child),
-            writer: Mutex::new(writer),
+            child,
+            writer,
             reader: Some(reader_thread),
             tty,
             shell,
+            #[cfg(windows)]
+            control,
+            #[cfg(windows)]
+            job,
         })
     }
 
@@ -220,6 +289,11 @@ impl TerminalManager {
         {
             let mut state = self.inner.state.lock().expect("state");
             state.delivering = true;
+            #[cfg(windows)]
+            {
+                state.prompt_ready = false;
+                state.edit_len = 1;
+            }
         }
         let result = {
             let mut writer = self.writer.lock().expect("writer");
@@ -237,16 +311,28 @@ impl TerminalManager {
             state.pending_cd = Some((target.to_path_buf(), revision));
             state.prompt_ready = false;
         }
+        #[cfg(windows)]
+        {
+            let result = self.control.cd(target, revision);
+            if result.is_err() {
+                self.inner.state.lock().expect("state").pending_cd = None;
+            }
+            result.map_err(TerminalError::Io)
+        }
+        #[cfg(not(windows))]
         let line = match self.shell {
             integration::ShellKind::PowerShell => integration::powershell_cd_line(target),
             integration::ShellKind::Zsh | integration::ShellKind::Bash => {
                 integration::cd_control_line(target)
             }
         };
-        let mut writer = self.writer.lock().expect("writer");
-        writer.write_all(&line)?;
-        writer.flush()?;
-        Ok(())
+        #[cfg(not(windows))]
+        {
+            let mut writer = self.writer.lock().expect("writer");
+            writer.write_all(&line)?;
+            writer.flush()?;
+            Ok(())
+        }
     }
 
     pub fn resize(&self, cols: u16, rows: u16) -> Result<(), TerminalError> {
@@ -257,6 +343,8 @@ impl TerminalManager {
             .master
             .lock()
             .expect("master")
+            .as_ref()
+            .ok_or(TerminalError::Exited)?
             .resize(PtySize {
                 rows,
                 cols,
@@ -273,10 +361,17 @@ impl TerminalManager {
     /// 安全性证据：prompt/编辑行来自 shell integration，前台进程组来自 tcgetpgrp。
     pub fn readiness(&self) -> ShellReadiness {
         let state = self.inner.state.lock().expect("state");
+        #[cfg(not(windows))]
         let foreground_is_shell = self
             .foreground_pgid()
             .map(|pg| pg == self.inner.shell_pid as i32)
             .unwrap_or(false);
+        #[cfg(windows)]
+        let foreground_is_shell = self
+            .control
+            .connected
+            .load(std::sync::atomic::Ordering::Acquire)
+            && state.prompt_ready;
         ShellReadiness {
             prompt_ready: state.prompt_ready && state.exited.is_none(),
             edit_line_empty: state.edit_len == 0,
@@ -291,7 +386,8 @@ impl TerminalManager {
             .master
             .lock()
             .expect("master")
-            .process_group_leader()
+            .as_ref()
+            .and_then(|master| master.process_group_leader())
     }
 
     #[cfg(not(unix))]
@@ -325,7 +421,14 @@ impl TerminalManager {
         // 前台程序名是实时查询（tcgetpgrp + ps），在取状态锁前完成。
         let foreground = self.foreground_process();
         let state = self.inner.state.lock().expect("state");
-        let readiness = if state.exited.is_some() {
+        #[cfg(windows)]
+        let integration_unavailable = !self
+            .control
+            .connected
+            .load(std::sync::atomic::Ordering::Acquire);
+        #[cfg(not(windows))]
+        let integration_unavailable = false;
+        let readiness = if state.exited.is_some() || integration_unavailable {
             ShellReadinessState::Unknown
         } else if state.prompt_ready {
             ShellReadinessState::Ready
@@ -413,6 +516,8 @@ impl TerminalManager {
     }
 
     fn terminate(&mut self) {
+        #[cfg(windows)]
+        self.job.terminate();
         let pid = self.inner.shell_pid as i32;
         #[cfg(unix)]
         {
@@ -463,6 +568,8 @@ impl TerminalManager {
             &mut *self.writer.lock().expect("writer"),
             Box::new(std::io::sink()),
         );
+        // ConPTY 的输出 EOF 依赖关闭 pseudo-console，必须先关闭再 join reader。
+        self.inner.master.lock().expect("master").take();
         let mut state = self.inner.state.lock().expect("state");
         if state.exited.is_none() {
             state.exited = Some(None);
@@ -478,15 +585,43 @@ impl Drop for TerminalManager {
     }
 }
 
-fn read_loop(inner: Arc<Inner>, mut reader: Box<dyn Read + Send>) {
+fn read_loop(
+    inner: Arc<Inner>,
+    mut reader: Box<dyn Read + Send>,
+    _writer: Arc<Mutex<Box<dyn Write + Send>>>,
+) {
     let mut extractor = OscExtractor::default();
     let mut buf = vec![0u8; 16 * 1024];
+    #[cfg(windows)]
+    let (mut inherited_cursor, mut startup_output) = (false, Vec::new());
     loop {
         let n = match reader.read(&mut buf) {
             Ok(0) | Err(_) => break,
             Ok(n) => n,
         };
         let (forward, messages) = extractor.feed(&buf[..n]);
+        #[cfg(windows)]
+        let forward = if !inherited_cursor {
+            // ConPTY 的 INHERIT_CURSOR 握手发生在 shell 启动前；即使终端面板未打开也必须应答。
+            startup_output.extend_from_slice(&forward);
+            if let Some(index) = startup_output
+                .windows(4)
+                .position(|bytes| bytes == b"\x1b[6n")
+            {
+                startup_output.drain(index..index + 4);
+                let mut writer = _writer.lock().expect("writer");
+                let _ = writer.write_all(b"\x1b[1;1R").and_then(|_| writer.flush());
+                inherited_cursor = true;
+                std::mem::take(&mut startup_output)
+            } else if startup_output.len() > 65536 {
+                inherited_cursor = true;
+                std::mem::take(&mut startup_output)
+            } else {
+                Vec::new()
+            }
+        } else {
+            forward
+        };
         let mut state = inner.state.lock().expect("state");
         if !forward.is_empty() {
             state.parser.process(&forward);
@@ -513,39 +648,10 @@ fn read_loop(inner: Arc<Inner>, mut reader: Box<dyn Read + Send>) {
             let _ = inner.events.send(event);
         }
         for message in messages {
-            match message {
-                Integration::Prompt { cwd } => {
-                    state.prompt_ready = true;
-                    state.edit_len = 0;
-                    state.cwd = cwd.clone();
-                    if let Some((target, revision)) = state.pending_cd.take() {
-                        let ok = same_directory(&target, Path::new(&cwd));
-                        let message =
-                            (!ok).then(|| format!("shell 未进入 {}", target.to_string_lossy()));
-                        let _ = inner.events.send(TerminalEvent::CdResult {
-                            revision,
-                            ok,
-                            cwd: cwd.clone(),
-                            message,
-                        });
-                    }
-                    let event = TerminalEvent::PromptReady { cwd };
-                    state
-                        .subscribers
-                        .retain(|(_, sender)| sender.send(event.clone()).is_ok());
-                    let _ = inner.events.send(event);
-                }
-                Integration::Preexec => {
-                    state.prompt_ready = false;
-                    state.edit_len = 0;
-                    let _ = inner.events.send(TerminalEvent::Preexec);
-                }
-                Integration::EditLen(len) => {
-                    state.edit_len = len;
-                    let _ = inner.events.send(TerminalEvent::EditLine { len });
-                }
-                Integration::Unknown(_) => {}
-            }
+            #[cfg(not(windows))]
+            apply_integration(&inner, &mut state, message);
+            #[cfg(windows)]
+            let _ = message; // PowerShell 状态只接受经 PID 验证的控制管道。
         }
     }
     let mut state = inner.state.lock().expect("state");
@@ -560,6 +666,43 @@ fn read_loop(inner: Arc<Inner>, mut reader: Box<dyn Read + Send>) {
         let _ = sender.send(event.clone());
     }
     let _ = inner.events.send(event);
+}
+
+fn apply_integration(inner: &Inner, state: &mut State, message: Integration) {
+    match message {
+        Integration::Prompt { cwd } => {
+            state.prompt_ready = true;
+            state.edit_len = 0;
+            state.cwd = cwd.clone();
+            if !cfg!(windows)
+                && let Some((target, revision)) = state.pending_cd.take()
+            {
+                let ok = same_directory(&target, Path::new(&cwd));
+                let message = (!ok).then(|| format!("shell 未进入 {}", target.to_string_lossy()));
+                let _ = inner.events.send(TerminalEvent::CdResult {
+                    revision,
+                    ok,
+                    cwd: cwd.clone(),
+                    message,
+                });
+            }
+            let event = TerminalEvent::PromptReady { cwd };
+            state
+                .subscribers
+                .retain(|(_, sender)| sender.send(event.clone()).is_ok());
+            let _ = inner.events.send(event);
+        }
+        Integration::Preexec => {
+            state.prompt_ready = false;
+            state.edit_len = 0;
+            let _ = inner.events.send(TerminalEvent::Preexec);
+        }
+        Integration::EditLen(len) => {
+            state.edit_len = len;
+            let _ = inner.events.send(TerminalEvent::EditLine { len });
+        }
+        Integration::Unknown(_) => {}
+    }
 }
 
 fn same_directory(a: &Path, b: &Path) -> bool {

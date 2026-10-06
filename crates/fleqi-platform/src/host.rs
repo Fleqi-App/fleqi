@@ -21,6 +21,7 @@ pub fn file_manager_frame() -> HostFrame {
         foreground: frame.foreground,
         has_window: frame.has_window,
         mouse_down: frame.mouse_down,
+        scale: 1.0,
     }
 }
 

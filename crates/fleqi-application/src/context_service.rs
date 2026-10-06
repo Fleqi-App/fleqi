@@ -75,7 +75,19 @@ impl ContextService {
     pub fn refresh(&self) -> ContextSnapshot {
         let _capture = self.capture.lock().expect("context capture");
         let raw = self.port.capture();
-        self.publish(raw, ContextSource::Finder)
+        if self.port.source() == ContextSource::Explorer
+            && raw.directory.is_none()
+            && let Some(picked) = self.latest()
+            && picked.source == ContextSource::Picker
+            && picked
+                .directory_ref
+                .as_ref()
+                .and_then(|path| self.paths.resolve(&path.id))
+                .is_some_and(|path| path.is_dir())
+        {
+            return picked;
+        }
+        self.publish(raw, self.port.source())
     }
 
     /// Re-read Finder before submitting a displayed snapshot. Return the displayed
@@ -92,12 +104,12 @@ impl ContextService {
         ) || !current.selection_complete
         {
             return Err(AppError::unavailable(
-                "无法核对 Finder 当前选区，请重新读取后再提交",
+                "无法核对文件管理器当前选区，请重新读取后再提交",
             ));
         }
         if !expected.same_inputs(&current) {
             return Err(AppError::conflict(
-                "Finder 选区或目录已变化，请核对当前文件后重新提交",
+                "文件管理器选区或目录已变化，请核对当前文件后重新提交",
                 Some(current.revision),
             ));
         }

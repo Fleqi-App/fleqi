@@ -22,3 +22,7 @@ pub mod system_operations;
 mod system_tools;
 pub mod terminal;
 pub mod tools;
+#[cfg(windows)]
+mod windows_job;
+#[cfg(windows)]
+mod windows_process;

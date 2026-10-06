@@ -1396,6 +1396,7 @@ dependencies = [
  "thiserror 2.0.20",
  "time",
  "vt100",
+ "windows",
  "zip 8.6.0",
 ]
 
@@ -1462,6 +1463,7 @@ dependencies = [
  "tar",
  "tempfile",
  "thiserror 2.0.20",
+ "windows",
 ]
 
 [[package]]

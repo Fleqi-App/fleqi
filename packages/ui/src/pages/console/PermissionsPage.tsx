@@ -193,7 +193,8 @@ export function PermissionsPage() {
   const host = useHost();
   const [busy, setBusy] = useState<Permission | "all" | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const records = host.bootstrap?.permissions.records ?? [];
+  const windows = host.bootstrap?.buildInfo.targetOs === "windows";
+  const records = windows ? [] : host.bootstrap?.permissions.records ?? [];
 
   const guard = async (key: Permission | "all", work: () => Promise<unknown>) => {
     setBusy(key);
@@ -224,6 +225,7 @@ export function PermissionsPage() {
           {notice}
         </InlineStatus>
       )}
+      {windows && host.bootstrap?.platform.items.map((item) => <Card key={item.id} title={({ finderContext: "资源管理器读取", accessibilityGeometry: "窗口跟随", directoryPicker: "文件夹选择", credentialStore: "Windows 凭据管理器" } as Record<string, string>)[item.id] ?? item.id} description={item.reason ?? "原生服务可用"}><InlineStatus tone={item.state === "supported" ? "success" : "neutral"}>{item.state === "supported" ? "可用" : "暂不可用"}</InlineStatus>{item.recovery && <p className="mt-2 text-xs text-muted-foreground">{item.recovery}</p>}</Card>)}
       {records.map((record) => (
         <PermissionRow
           key={record.permission}
@@ -237,7 +239,7 @@ export function PermissionsPage() {
       <ContextSection />
       <p className="text-xs text-muted-foreground">
         <Settings2 aria-hidden="true" className="mr-1 inline size-3.5" />
-        无需 Finder 权限的本地管理与历史查看保持可用；权限被撤销时相关能力会标注影响并提供手动选择目录。
+        {windows ? "资源管理器读取失败时可以手动选择目录；本地管理与历史查看保持可用。" : "无需 Finder 权限的本地管理与历史查看保持可用；权限被撤销时相关能力会标注影响并提供手动选择目录。"}
       </p>
     </div>
   );

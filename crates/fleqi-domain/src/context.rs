@@ -42,6 +42,7 @@ impl PathRef {
 #[serde(rename_all = "camelCase")]
 pub enum ContextSource {
     Finder,
+    Explorer,
     Picker,
 }
 

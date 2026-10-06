@@ -107,6 +107,7 @@ fn probe() -> ObservedDesktop {
                 foreground: if active == Some(id) { 1 } else { 0 },
                 has_window: true,
                 mouse_down: false,
+                scale: 1.0,
             },
             directory,
             manager: Some(manager),

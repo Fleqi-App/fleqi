@@ -29,6 +29,7 @@ export function ToolPreparation({ compact = false, onOpen }: { compact?: boolean
     return () => clearInterval(timer);
   }, [state?.running, reload]);
   const label = state?.running ? `工具准备 ${state.completed}/${state.total}` : state?.errors.length ? "工具需处理" : state?.total && state.completed === state.total ? "工具已就绪" : "工具准备";
+  if (host.bootstrap?.buildInfo.targetOs === "windows") return compact ? null : <Card title="基础处理已内置" description="文件、ZIP、基础图片和 PDF 无需额外安装。Windows 暂不提供扩展工具自动安装。" />;
   if (compact) return <Button className="ml-auto" onClick={onOpen} data-testid="tools-preparation-summary">{label}</Button>;
   return <Card title={label} description="首次启动自动检测并补装缺失工具；已有的 Git、FFmpeg 等直接复用。" actions={state?.running
     ? <Button onClick={() => void host.adapter.toolsPrepareCancel().then(reload)}>取消准备</Button>
