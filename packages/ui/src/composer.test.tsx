@@ -76,7 +76,7 @@ describe("输入条窗口", () => {
     render(<App adapter={createPreviewAdapter({ delayMs: 0 })} />);
     await waitFor(() => expect(screen.getByTestId("composer")).toBeDefined());
     expect(screen.getByTestId("composer").getAttribute("data-surface")).toBe("userHidden");
-    expect(screen.getByTestId("composer-surface-notice").textContent).toContain("快捷键");
+    expect((await screen.findByTestId("composer-surface-notice")).textContent).toContain("快捷键");
   });
 
   it("注册热键后显示创建会话；`!` 输入全绿并提交成功（AC-FLOW-009）", async () => {
