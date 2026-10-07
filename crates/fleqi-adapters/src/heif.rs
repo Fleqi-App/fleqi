@@ -46,15 +46,19 @@ pub fn decode(source: &Path, cancel: &AtomicBool) -> Result<DynamicImage, String
 #[cfg(target_os = "macos")]
 fn decode_with_sips(source: &Path, cancel: &AtomicBool) -> Result<DynamicImage, String> {
     let temporary = tempfile::tempdir().map_err(|error| error.to_string())?;
+    // ImageIO 的默认选择可能是第一项；私有副本只暴露文件声明的主图。
+    let primary = temporary.path().join("primary.heic");
+    copy_primary_image(source, &primary, cancel)?;
     let converted = temporary.path().join("decoded.png");
     let mut command = std::process::Command::new("/usr/bin/sips");
     command
         .args(["-s", "format", "png"])
-        .arg(source)
+        .arg(primary)
         .arg("--out")
         .arg(&converted);
     crate::native_steps::run_command(command, cancel)?;
-    image::open(converted).map_err(|error| format!("HEIF 无法解码：{error}"))
+    crate::image_operations::decode_with_image_crate(&converted)
+        .map_err(|error| format!("HEIF 无法解码：{error}"))
 }
 
 #[cfg(target_os = "linux")]
@@ -135,7 +139,7 @@ fn decode_with_heif_convert(source: &Path, cancel: &AtomicBool) -> Result<Dynami
     image::open(converted).map_err(|error| format!("HEIF 无法解码：{error}"))
 }
 
-#[cfg(any(test, not(any(target_os = "macos", target_os = "linux"))))]
+#[cfg(any(test, not(target_os = "linux")))]
 fn box_size(header: &[u8], available: u64) -> Result<(usize, u64), String> {
     let size = u32::from_be_bytes(
         header
@@ -164,7 +168,7 @@ fn box_size(header: &[u8], available: u64) -> Result<(usize, u64), String> {
     Ok((header_size, size))
 }
 
-#[cfg(any(test, not(any(target_os = "macos", target_os = "linux"))))]
+#[cfg(any(test, not(target_os = "linux")))]
 fn primary_flags(metadata: &[u8]) -> Result<Vec<(usize, u8)>, String> {
     if metadata.first() != Some(&0) || metadata.len() < 4 {
         return Err("HEIF meta 版本或长度无效".into());
@@ -217,11 +221,15 @@ fn primary_flags(metadata: &[u8]) -> Result<Vec<(usize, u8)>, String> {
         if &data[4..8] != b"infe" {
             return Err("HEIF iinf 包含无效条目".into());
         }
-        let id = match body.first() {
-            Some(2) if body.len() >= 12 => {
-                u32::from(u16::from_be_bytes(body[4..6].try_into().unwrap()))
-            }
-            Some(3) if body.len() >= 14 => u32::from_be_bytes(body[4..8].try_into().unwrap()),
+        let (id, item_type) = match body.first() {
+            Some(2) if body.len() >= 12 => (
+                u32::from(u16::from_be_bytes(body[4..6].try_into().unwrap())),
+                &body[8..12],
+            ),
+            Some(3) if body.len() >= 14 => (
+                u32::from_be_bytes(body[4..8].try_into().unwrap()),
+                &body[10..14],
+            ),
             _ => return Err("HEIF infe 版本或长度无效".into()),
         };
         if id == primary {
@@ -229,7 +237,22 @@ fn primary_flags(metadata: &[u8]) -> Result<Vec<(usize, u8)>, String> {
                 return Err("HEIF 主图重复或已隐藏".into());
             }
             seen_primary = true;
-        } else {
+        } else if matches!(
+            item_type,
+            b"hvc1"
+                | b"grid"
+                | b"iden"
+                | b"iovl"
+                | b"av01"
+                | b"avc1"
+                | b"unci"
+                | b"vvc1"
+                | b"jpeg"
+                | b"j2k1"
+                | b"mski"
+                | b"tili"
+        ) {
+            // 只隐藏图像；Exif、mime、uri 及其它元数据的 flags 和引用原样保留。
             flags.push((base + offset + header + 3, body[3] | 1));
         }
         offset += size as usize;
@@ -240,7 +263,7 @@ fn primary_flags(metadata: &[u8]) -> Result<Vec<(usize, u8)>, String> {
     Ok(flags)
 }
 
-#[cfg(any(test, not(any(target_os = "macos", target_os = "linux"))))]
+#[cfg(any(test, not(target_os = "linux")))]
 fn copy_primary_image(source: &Path, target: &Path, cancel: &AtomicBool) -> Result<(), String> {
     use std::io::{Read, Seek, SeekFrom, Write};
     let mut input = std::fs::File::open(source).map_err(|error| error.to_string())?;
@@ -366,11 +389,19 @@ mod tests {
         };
         let mut metadata = vec![0; 4];
         metadata.extend(make_box(b"pitm", &[1, 0, 0, 0, 0, 1, 0, 2], true));
-        let mut items = vec![1, 0, 0, 0, 0, 0, 0, 2];
+        let mut items = vec![1, 0, 0, 0, 0, 0, 0, 5];
         for id in [65_537u32, 65_538] {
             let mut body = vec![3, 0, 0, 0];
             body.extend_from_slice(&id.to_be_bytes());
             body.extend_from_slice(b"\0\0hvc1\0");
+            items.extend(make_box(b"infe", &body, true));
+        }
+        for (id, kind) in [(65_539u32, b"Exif"), (65_540, b"mime"), (65_541, b"uri ")] {
+            let mut body = vec![3, 0, 0, 0];
+            body.extend_from_slice(&id.to_be_bytes());
+            body.extend_from_slice(b"\0\0");
+            body.extend_from_slice(kind);
+            body.push(0);
             items.extend(make_box(b"infe", &body, true));
         }
         metadata.extend(make_box(b"iinf", &items, true));

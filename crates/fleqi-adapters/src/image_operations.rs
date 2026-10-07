@@ -52,7 +52,7 @@ fn read_header(source: &Path) -> Result<Vec<u8>, String> {
     Ok(header)
 }
 
-fn decode_with_image_crate(source: &Path) -> image::ImageResult<DynamicImage> {
+pub(crate) fn decode_with_image_crate(source: &Path) -> image::ImageResult<DynamicImage> {
     let reader = image::ImageReader::open(source)?.with_guessed_format()?;
     let mut decoder = reader.into_decoder()?;
     let orientation = decoder.orientation()?;
