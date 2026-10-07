@@ -1429,9 +1429,12 @@ pub(crate) fn valid_windows_filename(text: &str) -> bool {
 
 fn safe_zip_destination(root: &Path, relative: &Path, name: &str) -> Option<PathBuf> {
     if name.contains('\\')
-        || Path::new(name)
-            .components()
-            .any(|part| !matches!(part, std::path::Component::Normal(_)))
+        || Path::new(name).components().any(|part| {
+            !matches!(
+                part,
+                std::path::Component::Normal(_) | std::path::Component::CurDir
+            )
+        })
         || relative
             .components()
             .any(|part| !matches!(part, std::path::Component::Normal(_)))
@@ -1528,6 +1531,13 @@ fn trash_lookup_dirs() -> Vec<PathBuf> {
 
 #[cfg(target_os = "linux")]
 fn freedesktop_trash(source: &Path) -> Result<(), String> {
+    if std::fs::symlink_metadata(source)
+        .map_err(|error| error.to_string())?
+        .file_type()
+        .is_symlink()
+    {
+        return Err("回收站不跟随符号链接；链接及目标均已保留".into());
+    }
     let home = std::env::var("HOME").map_err(|_| "没有 HOME，无法使用回收站".to_owned())?;
     let data = std::env::var_os("XDG_DATA_HOME")
         .map(PathBuf::from)

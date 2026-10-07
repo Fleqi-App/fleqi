@@ -8,6 +8,31 @@ fn cap() -> FileCapabilities {
     FileCapabilities::new()
 }
 
+#[test]
+fn zip_dot_relative_entries_extract_but_parent_traversal_stays_blocked() {
+    use std::io::Write;
+    let root = tempfile::tempdir().unwrap();
+    let archive = root.path().join("input.zip");
+    let mut writer = zip::ZipWriter::new(std::fs::File::create(&archive).unwrap());
+    for name in ["./note.txt", "./folder/./child.txt", "./../escape.txt"] {
+        writer
+            .start_file(name, zip::write::SimpleFileOptions::default())
+            .unwrap();
+        writer.write_all(b"content").unwrap();
+    }
+    writer.finish().unwrap();
+    let output = root.path().join("output");
+    let report = cap().zip_extract(&archive, &output).unwrap();
+    assert_eq!(report.succeeded, 2, "{report:?}");
+    assert_eq!(report.failures.len(), 1);
+    assert_eq!(std::fs::read(output.join("note.txt")).unwrap(), b"content");
+    assert_eq!(
+        std::fs::read(output.join("folder/child.txt")).unwrap(),
+        b"content"
+    );
+    assert!(!root.path().join("escape.txt").exists());
+}
+
 fn write(path: &Path, content: &str) -> PathBuf {
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();
     std::fs::write(path, content).unwrap();
@@ -150,7 +175,13 @@ fn cap_file_007_organize_by_type_and_date_leaves_unmatched() {
 #[test]
 fn cap_file_008_trash_moves_to_trash_and_restores() {
     let root = tempfile::tempdir().unwrap();
-    let file = write(&root.path().join("gone.txt"), "bye");
+    let file = write(
+        &root.path().join(format!(
+            "fleqi-trash-{}.txt",
+            root.path().file_name().unwrap().to_string_lossy()
+        )),
+        "bye",
+    );
     let capabilities = cap();
     let trashed = capabilities.trash(vec![file.clone()]);
     assert!(trashed.succeeded() >= 1, "macOS 回收站可用");

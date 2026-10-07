@@ -41,6 +41,8 @@ export function OverviewPage({ onNavigate }: { onNavigate: (page: string) => voi
   const hostState = HOST_STATE[boot.hostState] ?? HOST_STATE.starting!;
   const finder = boot.permissions.records.find((r) => r.permission === "finderAutomation");
   const finderAllowed = finder?.status === "allowed";
+  const windows = boot.buildInfo.targetOs === "windows";
+  const contextReady = boot.platform.items.some((item) => item.id === "finderContext" && item.state === "supported");
   // 唤起就绪 = followFinder 已选，或 manual 且宿主注册成功的快捷键存在（settings.hotkey 只存注册成功的候选）。
   const activationReady = boot.settings.activation === "followFinder" || boot.settings.hotkey !== null;
   const hotkeyLabel = boot.settings.hotkey ? [...boot.settings.hotkey.modifiers, boot.settings.hotkey.key].join("+") : null;
@@ -48,7 +50,7 @@ export function OverviewPage({ onNavigate }: { onNavigate: (page: string) => voi
   const providerReady = (providers?.length ?? 0) > 0;
 
   const readiness = [
-    { label: `${manager} 权限`, icon: ShieldCheck, value: finderAllowed ? "已授权" : "待检查", ready: finderAllowed, action: () => onNavigate("permissions") },
+    { label: `${manager} ${windows ? "读取" : "权限"}`, icon: ShieldCheck, value: windows ? contextReady ? "可用" : "暂不可用" : finderAllowed ? "已授权" : "待检查", ready: windows ? contextReady : finderAllowed, action: () => onNavigate("permissions") },
     { label: "工作目录", icon: FolderSearch, value: boot.context?.availability.kind === "available" ? "已就绪" : "未读取", ready: boot.context?.availability.kind === "available", action: () => onNavigate("permissions") },
     { label: "唤起方式", icon: Keyboard, value: boot.settings.activation === "followFinder" ? `随 ${manager}` : hotkeyLabel ? `快捷键 ${hotkeyLabel}` : "未配置", ready: activationReady, testId: "activation-status", action: () => void host.adapter.openWindow("settings", "general") },
     { label: "模型 API", icon: Server, value: providerError ? "读取失败" : providers === null ? "读取中" : providerReady ? `已配置 ${providers.length} 个端点` : "未配置", ready: providerReady, testId: "provider-status", action: () => void host.adapter.openWindow("settings", "models") },

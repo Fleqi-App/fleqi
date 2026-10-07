@@ -1379,6 +1379,7 @@ dependencies = [
 name = "fleqi-adapters"
 version = "0.0.2"
 dependencies = [
+ "cc",
  "fleqi-application",
  "fleqi-domain",
  "image",

@@ -203,6 +203,22 @@ impl SyncMachine {
         self.shell_became_safe(readiness, visible)
     }
 
+    /// 只有执行器确认尚未执行时才释放在途请求；最新目标和命令草稿继续保留。
+    pub fn on_cd_cancelled(&mut self, revision: Revision) {
+        if self
+            .inflight
+            .as_ref()
+            .is_some_and(|(_, current)| *current == revision)
+        {
+            self.inflight = None;
+            self.state = if self.target.is_some() {
+                DirectorySync::Pending
+            } else {
+                DirectorySync::Synced
+            };
+        }
+    }
+
     /// cd 回执：核对版本；过期回执忽略。
     pub fn on_cd_result(
         &mut self,

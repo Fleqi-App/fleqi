@@ -206,6 +206,9 @@ pub enum TerminalEvent {
         cwd: String,
         message: Option<String>,
     },
+    CdCancelled {
+        revision: Revision,
+    },
     Exited {
         status: Option<i32>,
     },
@@ -217,6 +220,9 @@ pub trait TerminalHandle: Send + Sync {
     fn write_input(&self, bytes: &[u8]) -> Result<(), String>;
     /// 目录控制消息（仅 terminal 模块生成）。
     fn send_cd(&self, target: &Path, revision: Revision) -> Result<(), String>;
+    /// 私有通道可撤销尚未执行的目录请求；原有直接写入型端口保留在途回执。
+    fn cancel_cd(&self) {}
+    fn set_directory_visibility(&self, _visible: bool, _cancel: bool) {}
     fn resize(&self, cols: u16, rows: u16) -> Result<(), String>;
     fn readiness(&self) -> ShellReadiness;
     fn foreground_process(&self) -> Option<String>;

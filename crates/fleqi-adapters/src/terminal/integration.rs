@@ -91,28 +91,24 @@ pub fn detect_shell() -> ShellKind {
 }
 
 /// bash 包装：不改用户配置。用 `--rcfile` 加载本文件。
-/// 提示符与命令开始报告 OSC 7331。bash 没有 zsh 的行编辑钩子，编辑行长度只在提示符上报 0。
+/// 私有模块只安装到当前 shell；失败时保留原始终端，不能退回 OSC 判定空闲。
 pub fn install_bash(base: &Path) -> std::io::Result<PathBuf> {
     let dir = base.join("bash-integration");
     std::fs::create_dir_all(&dir)?;
     let rc = dir.join("bashrc");
-    let script = format!(
-        r#"# Fleqi bash integration (generated; do not edit)
+    let script = r#"# Fleqi bash integration (generated; do not edit)
 if [[ -f "$HOME/.bashrc" ]]; then
   source "$HOME/.bashrc"
 fi
-__fleqi_osc() {{ printf '\e]{osc};%s\a' "$1"; }}
-__fleqi_hex() {{ printf '%s' "$1" | od -An -v -tx1 | tr -d ' \n'; }}
-__fleqi_prompt() {{
-  __fleqi_osc "prompt;cwd=$(__fleqi_hex "$PWD")"
-  __fleqi_osc "edit;len=0"
-}}
-PROMPT_COMMAND="__fleqi_prompt${{PROMPT_COMMAND:+;$PROMPT_COMMAND}}"
-PS0=$'\e]{osc};preexec\a'
-HISTCONTROL=ignorespace${{HISTCONTROL:+:$HISTCONTROL}}
-"#,
-        osc = OSC_CODE
-    );
+if [[ -n ${FLEQI_BASH_BRIDGE-} && -n ${FLEQI_BASH_CONTROL-} && -n ${FLEQI_BASH_INITIAL_CWD-} ]] &&
+   builtin enable -f "$FLEQI_BASH_BRIDGE" fleqi_sync 2>/dev/null &&
+   builtin fleqi_sync "$FLEQI_BASH_CONTROL" "$FLEQI_BASH_HOST_PID" "$FLEQI_BASH_INITIAL_CWD"; then
+  :
+else
+  builtin printf '%s\n' 'Fleqi: Bash 自动目录同步不可用；请在终端手动操作。' >&2
+fi
+unset FLEQI_BASH_BRIDGE FLEQI_BASH_CONTROL FLEQI_BASH_HOST_PID FLEQI_BASH_INITIAL_CWD
+"#;
     std::fs::write(&rc, script)?;
     Ok(rc)
 }
@@ -149,9 +145,10 @@ mod shell_tests {
     fn generated_integrations_emit_private_osc() {
         let dir = tempfile::tempdir().unwrap();
         let bash = std::fs::read_to_string(install_bash(dir.path()).unwrap()).unwrap();
-        assert!(bash.contains("7331"));
-        assert!(bash.contains("preexec"));
-        assert!(bash.contains("edit;len=0"));
+        assert!(bash.contains("builtin enable -f"));
+        assert!(bash.contains("builtin fleqi_sync"));
+        assert!(!bash.contains("PROMPT_COMMAND="));
+        assert!(!bash.contains("edit;len=0"));
         let ps = std::fs::read_to_string(install_powershell(dir.path()).unwrap()).unwrap();
         assert!(ps.contains("NamedPipeClientStream"));
         assert!(ps.contains("PowerShell.OnIdle"));

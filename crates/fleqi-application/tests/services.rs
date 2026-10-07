@@ -168,11 +168,15 @@ struct FakeContext {
 }
 
 #[test]
-fn windows_picker_survives_missing_explorer_but_yields_to_a_real_context() {
+fn picker_survives_missing_file_manager_but_yields_to_a_real_context() {
     struct ExplorerPort(FakeContext);
     impl ContextPort for ExplorerPort {
         fn source(&self) -> ContextSource {
-            ContextSource::Explorer
+            if cfg!(target_os = "linux") {
+                ContextSource::Finder
+            } else {
+                ContextSource::Explorer
+            }
         }
         fn capture(&self) -> RawContext {
             self.0.capture()
@@ -210,7 +214,7 @@ fn windows_picker_survives_missing_explorer_but_yields_to_a_real_context() {
         ..RawContext::default()
     };
     let captured = context.refresh();
-    assert_eq!(captured.source, ContextSource::Explorer);
+    assert_eq!(captured.source, port.source());
     assert_ne!(captured.id, picked.id);
 }
 impl ContextPort for FakeContext {

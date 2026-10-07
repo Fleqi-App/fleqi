@@ -75,7 +75,7 @@ impl ContextService {
     pub fn refresh(&self) -> ContextSnapshot {
         let _capture = self.capture.lock().expect("context capture");
         let raw = self.port.capture();
-        if self.port.source() == ContextSource::Explorer
+        if (self.port.source() == ContextSource::Explorer || cfg!(target_os = "linux"))
             && raw.directory.is_none()
             && let Some(picked) = self.latest()
             && picked.source == ContextSource::Picker

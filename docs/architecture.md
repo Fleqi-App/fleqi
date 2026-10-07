@@ -172,7 +172,7 @@ Finder 当前目录保持不变时，用户手动 `cd` 更新真实 currentDirec
 
 `!` 由前端解析为可见模式，宿主再验证 session/terminal 所有权；去除模式标记后将整行及 Enter 投递给该 PTY。终端面板通过原始字节通道处理方向键、Tab、Ctrl+C、Esc、粘贴和交互程序输入，不能复用 AI 的 submit/cancel API。
 
-命令行模式发送与目录控制消息共用每 PTY 的串行写入队列。等待目录同步的新 `!` 命令保留为可取消的 queuedLine，不进入原始输入队列；目标版本改变时撤销自动投递并恢复草稿。终端面板输入继续服务当前程序，新 Finder 目标到来不会清空用户编辑行。
+命令行模式发送使用每 PTY 的串行写入队列；zsh 目录控制沿用该队列，Linux Bash 与 Windows PowerShell 使用独立私有控制通道。等待目录同步的新 `!` 命令保留为可取消的 queuedLine，不进入原始输入队列；目标版本改变时撤销自动投递并恢复草稿。终端面板输入继续服务当前程序，新 Finder 目标到来不会清空用户编辑行。
 
 取消 AI Run 由 ProcessRunner 终止所属进程树；终端 Ctrl+C 由 PTY 传给前台程序，通常保留 shell；结束会话关闭整个 PTY。macOS/Unix 使用进程组及会话子进程追踪，Windows 适配使用 Job Object/ConPTY 所属进程管理；必须通过无孤儿进程测试。
 
@@ -295,7 +295,14 @@ SQLite 表组：`settings`、`sessions`、`conversation_entries`、`runs`、`run
 - `ExecutionStep.scriptRuntime` 为可空兼容字段，取值 `posixSh`、`windowsPowerShell`，由宿主填写。Windows 不重试未声明解释器或声明不兼容解释器的旧脚本，要求重新规划。PowerShell 自由脚本不复用 Unix 只读白名单；默认先确认，`yolo` 和用户原始终端输入语义不变。
 - 能力目录通过已有 `CapabilityState` 附带可用状态及原因，Windows 仅开放能力台账指定的 21 项；模型收到同一可用清单，执行器再次核对。工具安装支持由设施端口报告，Windows 不启动 Homebrew 准备流程。Windows 自动更新频道尚未配置，使用 NSIS 安装包更新。
 
-以下矩阵描述平台长期目标；Windows 本轮范围以上述修复合同为准，Linux 不在本轮扩展范围。
+### Linux Bash 目录同步（2026-10-07）
+
+- 构建时编译 Bash loadable builtin 并嵌入适配器，仅加载到 Fleqi 创建的 Bash。模块、Unix socket 位于每会话私有临时目录；不安装系统 Bash、不改用户 profile、不要求用户电脑安装编译器。用户 `.bashrc` 仍加载，已有 `PROMPT_COMMAND`/`PS0` 不被覆盖。
+- 运行时核对 Bash 5.1、5.2.11+（5.2 系列）、5.3 与 Readline 8.1–8.3，并拒绝冲突的输入/事件钩子。通过 `rl_getc_function` 等待输入时检查真实编辑器状态；仅主提示符空行且无待读取键盘数据时调用 Bash 自身的 `cd` builtin。路径以原始字节十六进制传输，固定目录句柄后执行 `cd -P -- /proc/self/fd/...`，避免 shell 求值、CDPATH/cdspell 改写目标及链接别名重复同步。
+- 宿主与模块通过 `SO_PEERCRED` 双向核对 UID 和本会话 shell/宿主 PID；普通 PTY 输出不作状态证据。控制帧有长度限制、递增请求序号和上下文 revision，键盘输入轮次防止迟到空闲回执重新开放投递。子 shell 不消费父进程通道。
+- 可见性变化撤销模块内尚未执行的请求；独立取消回执仅释放匹配的在途请求，保留最新目标与有效草稿。恢复先更新目标，再开放模块投递。目录确认、实际 cwd 和状态机一致后才允许等待命令继续；通道中断或不兼容保留原始终端并降级为状态未知，不回退到 PTY 注入目录命令。
+
+以下矩阵描述平台长期目标；Windows 与 Linux Bash 本轮范围以上述合同为准，其它 Linux 能力没有因此扩大。
 
 | 能力 | macOS 首版实现 | Windows/Linux 后续适配 |
 |---|---|---|

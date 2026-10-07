@@ -153,19 +153,22 @@ impl SurfaceService {
         else {
             return;
         };
-        let Some(snapshot) = self.deps.context.latest() else {
-            return;
-        };
-        let Some(directory) = snapshot.directory_ref.as_ref() else {
-            return;
-        };
-        if let Some(target) = self.deps.paths.resolve(&directory.id) {
-            let _ = self.deps.terminal.target_changed(
-                &session_id,
-                &target,
-                &directory.display_path,
-                snapshot.revision,
-            );
+        let target = self.deps.context.latest().and_then(|snapshot| {
+            let directory = snapshot.directory_ref.as_ref()?;
+            self.deps
+                .paths
+                .resolve(&directory.id)
+                .map(|target| (target, snapshot.revision))
+        });
+        if let Some((target, revision)) = target {
+            let _ = self
+                .deps
+                .terminal
+                .resume_directory(&session_id, &target, revision);
+        } else {
+            // 没有有效上下文时仍恢复输入，但撤销暂隐前的旧目录目标。
+            self.deps.terminal.set_visibility(&session_id, false, true);
+            self.deps.terminal.set_visibility(&session_id, true, false);
         }
     }
 
@@ -218,14 +221,7 @@ impl SurfaceService {
                     self.deps.terminal.set_visibility(session_id, false, false);
                 }
             }
-            SurfaceOutcome::Restore { session_id, resync } => {
-                self.deps.terminal.set_visibility(session_id, true, false);
-                if *resync {
-                    self.sync_visible_to_context();
-                }
-            }
-            SurfaceOutcome::SyncDirectory { session_id } => {
-                self.deps.terminal.set_visibility(session_id, true, false);
+            SurfaceOutcome::Restore { .. } | SurfaceOutcome::SyncDirectory { .. } => {
                 self.sync_visible_to_context();
             }
             _ => {}

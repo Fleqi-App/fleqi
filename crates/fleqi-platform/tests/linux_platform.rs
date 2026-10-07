@@ -27,7 +27,7 @@ use fleqi_platform::linux::surface::{
 use fleqi_platform::linux::update_install::install_verified;
 use fleqi_platform::linux::x11::{
     directory_from_manager, is_file_manager, parse_active_window, parse_wm_class, parse_wm_name,
-    parse_wm_pid, parse_workarea, parse_xwininfo,
+    parse_workarea, parse_xwininfo,
 };
 use fleqi_platform::scheduling::MainThreadExecutor;
 
@@ -631,11 +631,9 @@ fn live_display_reads_open_file_manager_when_present() {
     let observed = fleqi_platform::linux::x11::observe();
     if observed.frame.has_window {
         assert!(observed.frame.width >= 80.0);
-        if observed.manager.as_deref() == Some("Pcmanfm") {
-            assert_eq!(
-                observed.directory.as_deref(),
-                Some(std::path::Path::new("/tmp/fleqi-fm-demo"))
-            );
+        if let Some(directory) = observed.directory {
+            assert!(directory.is_absolute() && directory.is_dir());
+            assert_eq!(observed.title.as_deref(), directory.to_str());
         }
     }
 }
@@ -651,7 +649,6 @@ fn x11_parser_reads_pcmanfm_geometry_and_matching_directory() {
         Some(("pcmanfm".into(), "Pcmanfm".into()))
     );
     assert_eq!(parse_wm_name(props).as_deref(), Some("fleqi-fm-demo"));
-    assert_eq!(parse_wm_pid(props), Some(36896));
     assert!(is_file_manager("pcmanfm", "Pcmanfm"));
     assert!(!is_file_manager("xfce4-panel", "Xfce4-panel"));
     let info = "\
@@ -660,23 +657,26 @@ Absolute upper-left Y:  388\n\
 Width: 640\n\
 Height: 480\n";
     assert_eq!(parse_xwininfo(info), Some((640.0, 388.0, 640.0, 480.0)));
-    let dir = std::env::temp_dir().join("fleqi-x11-parser");
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).unwrap();
-    let title = dir.file_name().unwrap().to_string_lossy().into_owned();
-    let found = directory_from_manager(&title, &[dir.to_string_lossy().into_owned()], |path| {
-        path == dir
-    });
-    assert_eq!(found, Some(dir.clone()));
+    let root = tempfile::tempdir().unwrap();
+    let first = root.path().join("A/docs");
+    let second = root.path().join("B/docs");
+    std::fs::create_dir_all(&first).unwrap();
+    std::fs::create_dir_all(&second).unwrap();
+    // 同名窗口标题不能区分导航前后的位置，即使候选目录真实存在。
+    assert!(directory_from_manager("docs", |_| true).is_none());
+    for directory in [&first, &second] {
+        assert_eq!(
+            directory_from_manager(&directory.to_string_lossy(), std::path::Path::is_dir),
+            Some(directory.clone())
+        );
+    }
     assert!(
         directory_from_manager(
-            "not-the-folder",
-            &[dir.to_string_lossy().into_owned()],
-            |_| true
+            &root.path().join("missing").to_string_lossy(),
+            std::path::Path::is_dir
         )
         .is_none()
     );
-    let _ = std::fs::remove_dir_all(&dir);
 }
 
 fn crc32(data: &[u8]) -> u32 {

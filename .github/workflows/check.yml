@@ -34,6 +34,18 @@ jobs:
       - run: cargo test --locked -p fleqi-domain -p fleqi-application
       - run: cargo check --locked -p fleqi-desktop
 
+  linux-native:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.98.0
+        with:
+          components: clippy
+      - run: cargo test --locked -p fleqi-adapters --lib bash_
+      - run: cargo test --locked -p fleqi-platform --test linux_platform
+      - run: cargo test --locked -p fleqi-adapters --test linux_trash
+      - run: cargo clippy --locked -p fleqi-adapters -p fleqi-platform --no-deps -- -D warnings
+
   windows-native:
     runs-on: windows-latest
     steps:

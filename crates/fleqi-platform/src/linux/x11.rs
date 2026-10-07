@@ -1,8 +1,7 @@
 //! X11 文件管理器窗口。只接受能对应到真实目录的窗口，不把桌面名当成 Finder。
 //!
-//! 几何来自 `xwininfo`，类名与标题来自 `xprop`。目录只在标题本身是绝对路径，
-//! 或进程参数里有与标题同名的现有目录时成立。用户在文件管理器里再次导航后，
-//! 若标题不再能对上那个参数，就报告没有目录，而不是沿用过期路径。
+//! 几何来自 `xwininfo`，类名与标题来自 `xprop`。目录只接受标题中的现存绝对路径；
+//! 进程启动参数不代表活动标签页，不能用同名目录猜测当前工作位置。
 
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
@@ -64,13 +63,7 @@ fn probe() -> ObservedDesktop {
     for id in clients {
         let Some(props) = run(
             "xprop",
-            &[
-                "-id",
-                &format!("{id:#x}"),
-                "WM_CLASS",
-                "_NET_WM_NAME",
-                "_NET_WM_PID",
-            ],
+            &["-id", &format!("{id:#x}"), "WM_CLASS", "_NET_WM_NAME"],
         ) else {
             continue;
         };
@@ -89,9 +82,7 @@ fn probe() -> ObservedDesktop {
             continue;
         }
         let title = parse_wm_name(&props).unwrap_or_default();
-        let pid = parse_wm_pid(&props);
-        let args = pid.map(process_args).unwrap_or_default();
-        let directory = directory_from_manager(&title, &args, Path::is_dir);
+        let directory = directory_from_manager(&title, Path::is_dir);
         let manager = if class.is_empty() { instance } else { class };
         return ObservedDesktop {
             frame: HostFrame {
@@ -126,17 +117,6 @@ fn run(program: &str, args: &[&str]) -> Option<String> {
         return None;
     }
     String::from_utf8(output.stdout).ok()
-}
-
-fn process_args(pid: u32) -> Vec<String> {
-    let Ok(bytes) = std::fs::read(format!("/proc/{pid}/cmdline")) else {
-        return Vec::new();
-    };
-    bytes
-        .split(|byte| *byte == 0)
-        .filter(|part| !part.is_empty())
-        .map(|part| String::from_utf8_lossy(part).into_owned())
-        .collect()
 }
 
 pub fn parse_active_window(text: &str) -> Option<u64> {
@@ -190,14 +170,6 @@ pub fn parse_wm_name(text: &str) -> Option<String> {
     quoted_strings(line).next()
 }
 
-pub fn parse_wm_pid(text: &str) -> Option<u32> {
-    let line = text.lines().find(|line| line.contains("_NET_WM_PID"))?;
-    line.split(|ch: char| !ch.is_ascii_digit())
-        .filter(|token| !token.is_empty())
-        .filter_map(|token| token.parse().ok())
-        .next()
-}
-
 pub fn parse_xwininfo(text: &str) -> Option<(f64, f64, f64, f64)> {
     let mut x = None;
     let mut y = None;
@@ -227,13 +199,8 @@ pub fn is_file_manager(instance: &str, class: &str) -> bool {
     NAMES.iter().any(|name| instance == *name || class == *name)
 }
 
-/// 标题是绝对目录，或某个参数的最后一段与标题相同且该参数是现存目录。
-pub fn directory_from_manager(
-    title: &str,
-    args: &[String],
-    is_dir: impl Fn(&Path) -> bool,
-) -> Option<PathBuf> {
-    let title = title.trim();
+/// 标题必须直接给出现存绝对目录；只有目录名时要求用户手动选择。
+pub fn directory_from_manager(title: &str, is_dir: impl Fn(&Path) -> bool) -> Option<PathBuf> {
     if title.is_empty() || title.contains('\0') {
         return None;
     }
@@ -241,14 +208,7 @@ pub fn directory_from_manager(
     if direct.is_absolute() && is_dir(&direct) && !path_has_parent(&direct) {
         return Some(direct);
     }
-    args.iter().find_map(|arg| {
-        let path = PathBuf::from(arg);
-        if !path.is_absolute() || path_has_parent(&path) || !is_dir(&path) {
-            return None;
-        }
-        let name = path.file_name()?.to_str()?;
-        (name == title).then_some(path)
-    })
+    None
 }
 
 fn path_has_parent(path: &Path) -> bool {
