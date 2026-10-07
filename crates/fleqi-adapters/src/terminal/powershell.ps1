@@ -4,7 +4,7 @@ $ErrorActionPreference = 'Stop'
 $OutputEncoding = [Console]::OutputEncoding
 Import-Module PSReadLine -ErrorAction Stop
 $global:__FleqiPipe = New-Object System.IO.Pipes.NamedPipeClientStream('.', $env:FLEQI_PIPE_NAME, [System.IO.Pipes.PipeDirection]::InOut, [System.IO.Pipes.PipeOptions]::Asynchronous)
-$global:__FleqiPipe.Connect(5000)
+$global:__FleqiPipe.Connect(60000)
 $env:FLEQI_PIPE_NAME = $null
 $global:__FleqiReader = New-Object System.IO.StreamReader($global:__FleqiPipe, [System.Text.Encoding]::UTF8)
 $global:__FleqiWriter = New-Object System.IO.StreamWriter($global:__FleqiPipe, (New-Object System.Text.UTF8Encoding $false))

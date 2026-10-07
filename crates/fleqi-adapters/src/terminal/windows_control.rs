@@ -94,7 +94,8 @@ impl Control {
         let stop = self.stop.clone();
         std::thread::spawn(move || {
             let handle = HANDLE(pipe.as_raw_handle());
-            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(8);
+            // 冷启动的 PowerShell/PSReadLine 可能受 .NET 初始化和系统扫描影响。
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
             loop {
                 let result = unsafe { ConnectNamedPipe(handle, None) };
                 if result.is_ok()

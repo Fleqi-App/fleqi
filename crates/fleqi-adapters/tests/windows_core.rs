@@ -6,6 +6,8 @@ use fleqi_domain::execution::ScriptRuntime;
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
+const STARTUP_TIMEOUT: Duration = Duration::from_secs(60);
+
 fn until(mut condition: impl FnMut() -> bool) {
     let deadline = Instant::now() + Duration::from_secs(15);
     while !condition() {
@@ -15,7 +17,7 @@ fn until(mut condition: impl FnMut() -> bool) {
 }
 
 fn terminal_until(terminal: &TerminalManager, mut condition: impl FnMut() -> bool) {
-    let deadline = Instant::now() + Duration::from_secs(15);
+    let deadline = Instant::now() + STARTUP_TIMEOUT;
     while !condition() {
         assert!(
             Instant::now() < deadline,
@@ -37,7 +39,7 @@ fn powershell_script_has_real_output_exit_and_literal_working_directory() {
         "[IO.File]::WriteAllText((Join-Path $PWD 'result.txt'), '真实结果'); Write-Output 'done'", &cwd, tx).unwrap();
     let mut output = String::new();
     loop {
-        match rx.recv_timeout(Duration::from_secs(15)).unwrap() {
+        match rx.recv_timeout(STARTUP_TIMEOUT).unwrap() {
             PortEvent::Output { bytes, .. } => output.push_str(&String::from_utf8_lossy(&bytes)),
             PortEvent::Exited { status } => {
                 assert_eq!(status, Some(0));
@@ -130,7 +132,7 @@ fn cancelling_a_process_returns_an_exit_event() {
     )
     .unwrap();
     assert!(matches!(
-        rx.recv_timeout(Duration::from_secs(10)).unwrap(),
+        rx.recv_timeout(STARTUP_TIMEOUT).unwrap(),
         ProcessEvent::Output { .. }
     ));
     runner.cancel();
@@ -211,7 +213,7 @@ fn cancelling_a_run_terminates_its_descendant_process() {
     }, tx).unwrap();
     let mut output = String::new();
     let child_id = loop {
-        match rx.recv_timeout(Duration::from_secs(10)).unwrap() {
+        match rx.recv_timeout(STARTUP_TIMEOUT).unwrap() {
             ProcessEvent::Output { bytes, .. } => {
                 output.push_str(&String::from_utf8_lossy(&bytes));
                 if output.contains('\n') {
@@ -474,19 +476,38 @@ fn windows_images_and_pdf_generate_readable_outputs() {
 fn windows_recycle_can_be_restored_by_the_system() {
     use fleqi_adapters::capabilities::FileCapabilities;
     use std::os::windows::process::CommandExt;
-    let root = tempfile::tempdir().unwrap();
-    let source = root
-        .path()
-        .join(format!("fleqi-recycle-{}.txt", std::process::id()));
+    use windows::Win32::Storage::FileSystem::GetShortPathNameW;
+    let root = tempfile::Builder::new()
+        .prefix("fleqi-recycle-long-parent-")
+        .tempdir()
+        .unwrap();
+    let long_parent = root.path().canonicalize().unwrap();
+    let expected = long_parent.to_string_lossy();
+    let expected = expected.strip_prefix(r"\\?\").unwrap_or(&expected);
+    let mut short = vec![0u16; 32768];
+    // SAFETY: 根目录仍存在，缓冲区足够容纳 Win32 路径；卷未开启短名时使用原路径。
+    let count = unsafe {
+        GetShortPathNameW(
+            &windows::core::HSTRING::from(root.path().as_os_str()),
+            Some(&mut short),
+        )
+    };
+    let parent = if count > 0 && (count as usize) < short.len() {
+        std::path::PathBuf::from(String::from_utf16(&short[..count as usize]).unwrap())
+    } else {
+        root.path().to_path_buf()
+    };
+    let source = parent.join(format!("fleqi-recycle-{}.txt", std::process::id()));
     std::fs::write(&source, b"restorable fixture").unwrap();
     let report = FileCapabilities::new().trash(vec![source.clone()]);
     assert_eq!(report.succeeded, 1, "{report:?}");
     assert!(!source.exists());
     // 原目录由本测试独占，按它匹配不依赖 Shell 的显示名、扩展名隐藏设置或语言。
-    let script = "$ErrorActionPreference='Stop'; $p=$env:FLEQI_TEST_RECYCLE_PATH; $parent=[IO.Path]::GetDirectoryName($p); $shell=New-Object -ComObject Shell.Application; $items=@($shell.NameSpace(10).Items() | Where-Object { $_.ExtendedProperty('System.Recycle.DeletedFrom') -eq $parent }); if ($items.Count -ne 1) { throw 'fixture not uniquely found in recycle bin' }; $items[0].InvokeVerb('undelete')";
+    let script = "$ErrorActionPreference='Stop'; $parent=$env:FLEQI_TEST_RECYCLE_PARENT; $shell=New-Object -ComObject Shell.Application; $items=@($shell.NameSpace(10).Items() | Where-Object { $_.ExtendedProperty('System.Recycle.DeletedFrom') -eq $parent }); if ($items.Count -ne 1) { throw ('fixture not uniquely found in recycle bin; source=' + $env:FLEQI_TEST_RECYCLE_PATH + '; canonical parent=' + $parent + '; matches=' + $items.Count) }; $items[0].InvokeVerb('undelete')";
     let output = std::process::Command::new("powershell.exe")
         .args(["-NoProfile", "-NonInteractive", "-Command", script])
         .env("FLEQI_TEST_RECYCLE_PATH", &source)
+        .env("FLEQI_TEST_RECYCLE_PARENT", expected)
         .creation_flags(0x08000000)
         .output()
         .unwrap();
