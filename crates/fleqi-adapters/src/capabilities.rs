@@ -363,7 +363,10 @@ impl FileCapabilities {
             if ok {
                 report.succeeded += 1;
                 // 记录回收站内的新位置（同名取最近修改），供恢复使用。
-                destination = Self::locate_in_trash(&source);
+                destination = status
+                    .ok()
+                    .flatten()
+                    .or_else(|| Self::locate_in_trash(&source));
                 if let Some(trash_path) = &destination {
                     report.restore_paths.push(trash_path.clone());
                 }
@@ -427,9 +430,9 @@ impl FileCapabilities {
             && files.ends_with("files")
             && let Some(root) = files.parent()
         {
-            let info = root
-                .join("info")
-                .join(format!("{}.trashinfo", name.to_string_lossy()));
+            let mut name = name.to_os_string();
+            name.push(".trashinfo");
+            let info = root.join("info").join(name);
             let _ = std::fs::remove_file(info);
         }
         Ok(())
@@ -1469,7 +1472,7 @@ fn safe_zip_destination(root: &Path, relative: &Path, name: &str) -> Option<Path
     Some(destination)
 }
 
-fn move_to_trash(source: &Path) -> Result<(), String> {
+fn move_to_trash(source: &Path) -> Result<Option<PathBuf>, String> {
     if !source.exists() {
         return Err(format!("找不到 {}", source.display()));
     }
@@ -1488,7 +1491,7 @@ fn move_to_trash(source: &Path) -> Result<(), String> {
             .output()
             .map_err(|error| error.to_string())?;
         if output.status.success() {
-            return Ok(());
+            return Ok(None);
         }
         let stderr = String::from_utf8_lossy(&output.stderr).trim().to_owned();
         return Err(if stderr.is_empty() {
@@ -1499,11 +1502,11 @@ fn move_to_trash(source: &Path) -> Result<(), String> {
     }
     #[cfg(target_os = "linux")]
     {
-        freedesktop_trash(source)
+        freedesktop_trash(source).map(Some)
     }
     #[cfg(target_os = "windows")]
     {
-        windows_recycle(source)
+        windows_recycle(source).map(|()| None)
     }
     #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
     {
@@ -1530,7 +1533,9 @@ fn trash_lookup_dirs() -> Vec<PathBuf> {
 }
 
 #[cfg(target_os = "linux")]
-fn freedesktop_trash(source: &Path) -> Result<(), String> {
+fn freedesktop_trash(source: &Path) -> Result<PathBuf, String> {
+    use std::fmt::Write as _;
+    use std::os::unix::ffi::OsStrExt;
     if std::fs::symlink_metadata(source)
         .map_err(|error| error.to_string())?
         .file_type()
@@ -1550,44 +1555,67 @@ fn freedesktop_trash(source: &Path) -> Result<(), String> {
     let original = source
         .canonicalize()
         .map_err(|error| format!("无法解析回收站路径：{error}"))?;
-    let base = original
-        .file_name()
-        .ok_or("回收站项目没有文件名")?
-        .to_string_lossy()
-        .into_owned();
-    if base.contains(['/', '\\']) || base.contains('\0') {
-        return Err("文件名不能进入回收站".into());
-    }
-    let mut name = base.clone();
-    let mut index = 1u32;
-    while files.join(&name).exists() || info.join(format!("{name}.trashinfo")).exists() {
-        name = format!("{base}-{index}");
-        index += 1;
-        if index > 1000 {
-            return Err("回收站中同名项目过多".into());
+    let base = original.file_name().ok_or("回收站项目没有文件名")?;
+    let mut path_text = String::new();
+    for byte in original.as_os_str().as_bytes() {
+        if byte.is_ascii_alphanumeric() || matches!(byte, b'/' | b'-' | b'_' | b'.' | b'~') {
+            path_text.push(char::from(*byte));
+        } else {
+            write!(path_text, "%{byte:02X}").expect("string write");
         }
-    }
-    let destination = files.join(&name);
-    if std::fs::rename(&original, &destination).is_err() {
-        return Err(format!(
-            "无法把 {} 移入回收站（可能不在同一文件系统）",
-            original.display()
-        ));
-    }
-    let path_text = original.to_string_lossy();
-    if path_text.contains(['\n', '\r']) {
-        let _ = std::fs::rename(&destination, &original);
-        return Err("路径含换行，已保留原文件".into());
     }
     let body = format!(
         "[Trash Info]\nPath={path_text}\nDeletionDate={}\n",
         utc_stamp()
     );
-    if let Err(error) = std::fs::write(info.join(format!("{name}.trashinfo")), body) {
-        let _ = std::fs::rename(&destination, &original);
-        return Err(format!("无法写入回收站信息：{error}"));
+    let source_c =
+        std::ffi::CString::new(original.as_os_str().as_bytes()).map_err(|e| e.to_string())?;
+    for index in 0..1000 {
+        let mut name = base.to_os_string();
+        if index > 0 {
+            name.push(format!("-{index}"));
+        }
+        let destination = files.join(&name);
+        name.push(".trashinfo");
+        let information = info.join(name);
+        // 先排他创建元数据，与其它进程及桌面回收站共同占位；不能先移动再补写。
+        let mut record = match std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&information)
+        {
+            Ok(file) => file,
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(error) => return Err(format!("无法创建回收站信息：{error}")),
+        };
+        let written = record.write_all(body.as_bytes());
+        drop(record);
+        if let Err(error) = written {
+            let _ = std::fs::remove_file(&information);
+            return Err(format!("无法写入回收站信息：{error}"));
+        }
+        let destination_c = std::ffi::CString::new(destination.as_os_str().as_bytes())
+            .map_err(|e| e.to_string())?;
+        // SAFETY: 两个绝对路径均为有效 C 字符串；NOREPLACE 还保护没有元数据的遗留条目。
+        let moved = unsafe {
+            libc::renameat2(
+                libc::AT_FDCWD,
+                source_c.as_ptr(),
+                libc::AT_FDCWD,
+                destination_c.as_ptr(),
+                libc::RENAME_NOREPLACE,
+            )
+        };
+        if moved == 0 {
+            return Ok(destination);
+        }
+        let error = std::io::Error::last_os_error();
+        let _ = std::fs::remove_file(&information);
+        if error.kind() != std::io::ErrorKind::AlreadyExists {
+            return Err(format!("无法移入回收站，原文件已保留：{error}"));
+        }
     }
-    Ok(())
+    Err("回收站中同名项目过多，原文件已保留".into())
 }
 
 #[cfg(target_os = "windows")]

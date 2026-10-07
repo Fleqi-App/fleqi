@@ -820,6 +820,78 @@ fn input_requires_lease_and_background_cancels_pending() {
 }
 
 #[test]
+fn input_during_cd_withdraws_waiting_command_even_when_queued_after_input() {
+    for input_first in [false, true] {
+        let root = tempfile::tempdir().unwrap();
+        let rig = rig(
+            &Settings {
+                activation: Activation::FollowFinder,
+                ..Settings::default()
+            },
+            root.path(),
+        );
+        rig.refresh();
+        let session_id = rig.surface.visible_session().unwrap().id;
+        rig.terminal.open(&session_id, None, 80, 24).unwrap();
+        let lease = rig.terminal.acquire_lease(&session_id, "composer").unwrap();
+        let target = root.path().join("target");
+        std::fs::create_dir(&target).unwrap();
+        rig.terminal
+            .target_changed(&session_id, &target, "target", Revision::new(1))
+            .unwrap();
+        if input_first {
+            rig.terminal
+                .input(&session_id, Some(&lease), b"user draft")
+                .unwrap();
+        }
+        rig.terminal
+            .submit_line(
+                "queued",
+                &session_id,
+                "must-not-run",
+                Revision::new(1),
+                "target",
+                Some(target.clone()),
+            )
+            .unwrap();
+        if !input_first {
+            rig.terminal
+                .input(&session_id, Some(&lease), b"user draft")
+                .unwrap();
+        }
+        rig.port.emit(TerminalEvent::CdResult {
+            revision: Revision::new(1),
+            ok: true,
+            cwd: target.to_string_lossy().into_owned(),
+            message: None,
+        });
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+        while rig.sessions.get(&session_id).unwrap().directory_sync
+            != fleqi_domain::directory_sync::DirectorySync::Synced
+        {
+            assert!(std::time::Instant::now() < deadline);
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        assert_eq!(
+            rig.terminal.take_withdrawn(&session_id).unwrap().text,
+            "must-not-run"
+        );
+        assert_eq!(
+            written_texts(&rig.port)
+                .iter()
+                .filter(|line| *line == "user draft")
+                .count(),
+            1
+        );
+        assert!(
+            !written_texts(&rig.port)
+                .iter()
+                .any(|line| line == "must-not-run\r")
+        );
+    }
+}
+
+#[test]
 fn keep_all_hide_preserves_and_end_all_ends_sessions() {
     let keep = Settings {
         activation: Activation::FollowFinder,

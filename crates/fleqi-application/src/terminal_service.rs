@@ -28,6 +28,8 @@ struct Entry {
     revision: u64,
     /// 消费方已回执的流位置（terminal_ack；流控/诊断用）。
     acked_cursor: u64,
+    /// 目录请求在途时的新输入使其回执不能继续提交等待命令。
+    cd_input: Option<(Revision, bool)>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -126,6 +128,7 @@ impl TerminalService {
                 lease: None,
                 revision: 1,
                 acked_cursor: 0,
+                cd_input: None,
             },
         );
         self.emit_changed(session_id);
@@ -180,7 +183,20 @@ impl TerminalService {
                     }
                 };
                 let decision = self
-                    .with_entry(session_id, |entry, _| {
+                    .with_entry(session_id, |entry, service| {
+                        if entry
+                            .cd_input
+                            .is_some_and(|(expected, _)| expected == revision)
+                        {
+                            let (_, interrupted) = entry.cd_input.take().expect("matching cd");
+                            if interrupted && let Some(line) = entry.sync.cancel_queued() {
+                                service
+                                    .withdrawn
+                                    .lock()
+                                    .expect("withdrawn")
+                                    .insert(session_id.to_owned(), line);
+                            }
+                        }
                         let decision = entry.sync.on_cd_result(revision, outcome);
                         if let Some(SyncDecision::SyncedAndSend { line, .. }) = &decision {
                             let _ = entry
@@ -209,6 +225,12 @@ impl TerminalService {
             }
             TerminalEvent::CdCancelled { revision } => {
                 self.with_entry(session_id, |entry, _| {
+                    if entry
+                        .cd_input
+                        .is_some_and(|(expected, _)| expected == revision)
+                    {
+                        entry.cd_input = None;
+                    }
                     entry.sync.on_cd_cancelled(revision);
                 });
                 self.publish_directory_state(session_id);
@@ -256,8 +278,10 @@ impl TerminalService {
 
     /// 状态决策与实际投递持有同一会话锁，隐藏或新目标不能插入两者之间。
     fn deliver_cd(entry: &mut Entry, target: &Path, revision: Revision) -> AppResult<()> {
+        entry.cd_input = Some((revision, false));
         let result = entry.handle.send_cd(target, revision);
         if let Err(message) = &result {
+            entry.cd_input = None;
             entry.sync.on_cd_result(
                 revision,
                 SyncOutcome::Failed {
@@ -296,6 +320,11 @@ impl TerminalService {
         match (&entry.lease, lease) {
             (Some((held, _)), Some(given)) if held == given => {}
             _ => return Err(AppError::forbidden("终端输入需要当前输入租约")),
+        }
+        if !bytes.is_empty()
+            && let Some((_, interrupted)) = &mut entry.cd_input
+        {
+            *interrupted = true;
         }
         entry.handle.write_input(bytes).map_err(AppError::internal)
     }

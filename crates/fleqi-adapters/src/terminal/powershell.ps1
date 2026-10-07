@@ -12,10 +12,20 @@ $global:__FleqiWriter.AutoFlush = $true
 $global:__FleqiRead = $global:__FleqiReader.ReadLineAsync()
 $global:__FleqiReading = $false
 $global:__FleqiPending = $null
+$global:__FleqiVisible = $false
+$global:__FleqiSerial = [UInt64]0
 
 function global:__FleqiSend($value) {
     if ($global:__FleqiPipe.IsConnected) {
         $global:__FleqiWriter.WriteLine(($value | ConvertTo-Json -Compress))
+    }
+}
+
+function global:__FleqiCancelPending {
+    if ($null -ne $global:__FleqiPending) {
+        $request = $global:__FleqiPending
+        $global:__FleqiPending = $null
+        __FleqiSend @{ event = 'cancelled'; serial = [string]$request.serial; revision = [string]$request.revision; cwd = $PWD.ProviderPath }
     }
 }
 
@@ -37,23 +47,35 @@ $null = Register-EngineEvent -SourceIdentifier PowerShell.OnIdle -Action {
         $line = $null
         $cursor = 0
         [Microsoft.PowerShell.PSConsoleReadLine]::GetBufferState([ref]$line, [ref]$cursor)
-        if ($global:__FleqiRead.IsCompleted) {
+        # Drain queued controls before applying a directory; a later cancellation wins.
+        while ($global:__FleqiRead.IsCompleted) {
             $json = $global:__FleqiRead.GetAwaiter().GetResult()
             if ($null -eq $json) { return }
-            $global:__FleqiPending = $json | ConvertFrom-Json
+            $request = $json | ConvertFrom-Json
             $global:__FleqiRead = $global:__FleqiReader.ReadLineAsync()
+            $serial = [UInt64]$request.serial
+            if ($serial -le $global:__FleqiSerial) { throw 'Invalid control serial' }
+            $global:__FleqiSerial = $serial
+            __FleqiCancelPending
+            switch ($request.kind) {
+                'cd' { $global:__FleqiPending = $request }
+                'cancel' { }
+                'visibility' { $global:__FleqiVisible = [bool]$request.visible }
+                default { throw 'Invalid control kind' }
+            }
         }
-        if ($line.Length -eq 0 -and $null -ne $global:__FleqiPending) {
+        if ($global:__FleqiVisible -and $line.Length -eq 0 -and $null -ne $global:__FleqiPending) {
             $request = $global:__FleqiPending
             $global:__FleqiPending = $null
             $ok = $false
             $message = $null
             try { Set-Location -LiteralPath $request.path -ErrorAction Stop; $ok = $true }
             catch { $message = $_.Exception.Message }
-            __FleqiSend @{ event = 'cd'; revision = [string]$request.revision; ok = $ok; cwd = $PWD.ProviderPath; message = $message }
             [Microsoft.PowerShell.PSConsoleReadLine]::InvokePrompt()
+            __FleqiSend @{ event = 'cd'; serial = [string]$request.serial; revision = [string]$request.revision; ok = $ok; cwd = $PWD.ProviderPath; message = $message }
+            [Microsoft.PowerShell.PSConsoleReadLine]::GetBufferState([ref]$line, [ref]$cursor)
         }
-        __FleqiSend @{ event = 'state'; cwd = $PWD.ProviderPath; edit = $line.Length }
+        __FleqiSend @{ event = 'state'; cwd = $PWD.ProviderPath; edit = $line.Length; ready = $global:__FleqiVisible -and $line.Length -eq 0 }
     } catch {
         $global:__FleqiReading = $false
         try { __FleqiSend @{ event = 'preexec' } } catch { }

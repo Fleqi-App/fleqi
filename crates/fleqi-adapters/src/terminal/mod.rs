@@ -496,6 +496,8 @@ impl TerminalManager {
     }
 
     pub fn cancel_cd(&self) {
+        #[cfg(windows)]
+        self.control.cancel();
         #[cfg(target_os = "linux")]
         if let Some(control) = &self.bash_control {
             control.cancel();
@@ -503,6 +505,13 @@ impl TerminalManager {
     }
 
     pub fn set_directory_visibility(&self, visible: bool, cancel: bool) {
+        #[cfg(windows)]
+        {
+            if !visible {
+                self.inner.state.lock().expect("state").prompt_ready = false;
+            }
+            self.control.visibility(visible, cancel);
+        }
         #[cfg(target_os = "linux")]
         if let Some(control) = &self.bash_control {
             if !visible {
@@ -510,7 +519,7 @@ impl TerminalManager {
             }
             control.visibility(visible, cancel);
         }
-        #[cfg(not(target_os = "linux"))]
+        #[cfg(not(any(target_os = "linux", windows)))]
         let _ = (visible, cancel);
     }
 

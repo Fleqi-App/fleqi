@@ -139,6 +139,64 @@ fn cancelling_a_process_returns_an_exit_event() {
 }
 
 #[test]
+fn cancelled_or_hidden_windows_cd_never_applies_later() {
+    use fleqi_domain::revision::Revision;
+    let root = tempfile::tempdir().unwrap();
+    let cwd = root.path().join("initial");
+    let target = root.path().join("target");
+    std::fs::create_dir(&cwd).unwrap();
+    std::fs::create_dir(&target).unwrap();
+    let (tx, rx) = mpsc::channel();
+    let terminal = TerminalManager::spawn(TerminalOptions {
+        session_id: "windows-cancel".into(),
+        cwd: cwd.clone(),
+        cols: 100,
+        rows: 30,
+        data_dir: root.path().join("state"),
+        max_persisted_bytes: 1024 * 1024,
+        events: tx,
+    })
+    .unwrap();
+    terminal_until(&terminal, || terminal.readiness().is_safe());
+    for mode in ["cancel", "hide", "pause"] {
+        terminal.write_input(b"Write-Output 'draft'").unwrap();
+        std::thread::sleep(Duration::from_millis(400));
+        terminal.send_cd(&target, Revision::new(1)).unwrap();
+        std::thread::sleep(Duration::from_millis(400));
+        if mode == "cancel" {
+            terminal.cancel_cd();
+        } else {
+            terminal.set_directory_visibility(false, mode == "hide");
+        }
+        until(|| {
+            matches!(
+                rx.try_recv(),
+                Ok(fleqi_adapters::terminal::TerminalEvent::CdCancelled { .. })
+            )
+        });
+        terminal.write_input(b"\x03").unwrap();
+        std::thread::sleep(Duration::from_millis(500));
+        assert_eq!(
+            std::path::Path::new(&terminal.current_directory())
+                .canonicalize()
+                .unwrap(),
+            cwd.canonicalize().unwrap()
+        );
+        terminal.set_directory_visibility(true, false);
+        terminal_until(&terminal, || terminal.readiness().is_safe());
+    }
+    terminal.send_cd(&target, Revision::new(2)).unwrap();
+    terminal_until(&terminal, || {
+        terminal.readiness().is_safe()
+            && std::path::Path::new(&terminal.current_directory())
+                .canonicalize()
+                .ok()
+                == target.canonicalize().ok()
+    });
+    terminal.shutdown();
+}
+
+#[test]
 fn cancelling_a_run_terminates_its_descendant_process() {
     use std::os::windows::io::{FromRawHandle, OwnedHandle};
     use windows::Win32::System::Threading::{
@@ -424,7 +482,8 @@ fn windows_recycle_can_be_restored_by_the_system() {
     let report = FileCapabilities::new().trash(vec![source.clone()]);
     assert_eq!(report.succeeded, 1, "{report:?}");
     assert!(!source.exists());
-    let script = "$ErrorActionPreference='Stop'; $p=$env:FLEQI_TEST_RECYCLE_PATH; $parent=[IO.Path]::GetDirectoryName($p); $name=[IO.Path]::GetFileName($p); $shell=New-Object -ComObject Shell.Application; $items=@($shell.NameSpace(10).Items() | Where-Object { $_.Name -eq $name -and $_.ExtendedProperty('System.Recycle.DeletedFrom') -eq $parent }); if ($items.Count -ne 1) { throw 'fixture not uniquely found in recycle bin' }; $items[0].InvokeVerb('undelete')";
+    // 原目录由本测试独占，按它匹配不依赖 Shell 的显示名、扩展名隐藏设置或语言。
+    let script = "$ErrorActionPreference='Stop'; $p=$env:FLEQI_TEST_RECYCLE_PATH; $parent=[IO.Path]::GetDirectoryName($p); $shell=New-Object -ComObject Shell.Application; $items=@($shell.NameSpace(10).Items() | Where-Object { $_.ExtendedProperty('System.Recycle.DeletedFrom') -eq $parent }); if ($items.Count -ne 1) { throw 'fixture not uniquely found in recycle bin' }; $items[0].InvokeVerb('undelete')";
     let output = std::process::Command::new("powershell.exe")
         .args(["-NoProfile", "-NonInteractive", "-Command", script])
         .env("FLEQI_TEST_RECYCLE_PATH", &source)

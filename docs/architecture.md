@@ -172,7 +172,7 @@ Finder 当前目录保持不变时，用户手动 `cd` 更新真实 currentDirec
 
 `!` 由前端解析为可见模式，宿主再验证 session/terminal 所有权；去除模式标记后将整行及 Enter 投递给该 PTY。终端面板通过原始字节通道处理方向键、Tab、Ctrl+C、Esc、粘贴和交互程序输入，不能复用 AI 的 submit/cancel API。
 
-命令行模式发送使用每 PTY 的串行写入队列；zsh 目录控制沿用该队列，Linux Bash 与 Windows PowerShell 使用独立私有控制通道。等待目录同步的新 `!` 命令保留为可取消的 queuedLine，不进入原始输入队列；目标版本改变时撤销自动投递并恢复草稿。终端面板输入继续服务当前程序，新 Finder 目标到来不会清空用户编辑行。
+命令行模式发送使用每 PTY 的串行写入队列；zsh 目录控制沿用该队列，Linux Bash 与 Windows PowerShell 使用独立私有控制通道。等待目录同步的新 `!` 命令保留为可取消的 queuedLine，不进入原始输入队列；目标版本改变时撤销自动投递并恢复草稿。目录请求在途期间若收到新的终端输入，其回执只能更新目录，等待命令退回草稿并提示重新提交；输入和回执处理持有同一会话锁。终端面板输入继续服务当前程序，新 Finder 目标到来不会清空用户编辑行。
 
 取消 AI Run 由 ProcessRunner 终止所属进程树；终端 Ctrl+C 由 PTY 传给前台程序，通常保留 shell；结束会话关闭整个 PTY。macOS/Unix 使用进程组及会话子进程追踪，Windows 适配使用 Job Object/ConPTY 所属进程管理；必须通过无孤儿进程测试。
 
@@ -290,7 +290,7 @@ SQLite 表组：`settings`、`sessions`、`conversation_entries`、`runs`、`run
 
 - `fleqi-platform` 的 Windows 模块直接调用 Credential Manager 和 Shell COM；COM 对象留在专用 STA，仅向应用层返回路径和状态。Explorer 按真实前台窗口和可见活动 Shell view 匹配，无法唯一匹配或读取完整选区时拒绝生成上下文；不使用窗口枚举第一项作为当前目录。
 - `ContextSource` 新增 `explorer`，保留 `finder`、`picker`。手动选择的有效目录在 Explorer 暂不可用时仍可作为明确的工作上下文。窗口几何通过 Win32 读取物理像素和 DPI；自动显示用不激活窗口的方式，手动独立显示不依赖 Explorer 窗口存在。
-- Windows 持续终端复用 ConPTY 和系统 PowerShell 5.1。宿主完成 ConPTY 光标握手；提示符/编辑状态和目录请求使用当前用户命名管道，并验证连接进程为本会话 shell。PSReadLine 的空闲处理器重新核对真实编辑行后应用目录请求，普通终端输出不能充当状态回执。shell 自然退出和主动结束均关闭 ConPTY 并回收输出线程。
+- Windows 持续终端复用 ConPTY 和系统 PowerShell 5.1。宿主完成 ConPTY 光标握手；提示符/编辑状态和目录请求使用当前用户命名管道，并验证连接进程为本会话 shell。控制消息包含请求序号、取消与可见性；PSReadLine 的空闲处理器先处理已收到的控制消息，再核对可见性和真实编辑行后应用最新目录请求，撤销的请求返回独立取消回执。普通终端输出不能充当状态回执。shell 自然退出和主动结束均关闭 ConPTY 并回收输出线程。
 - Windows 一次性任务使用独立管道进程，在挂起启动期间加入独占 Job 后恢复；取消句柄与等待句柄分离。临时 PowerShell 文件使用明确编码、逐任务生命周期及进程级执行策略，不修改用户 profile 或系统持久策略。
 - `ExecutionStep.scriptRuntime` 为可空兼容字段，取值 `posixSh`、`windowsPowerShell`，由宿主填写。Windows 不重试未声明解释器或声明不兼容解释器的旧脚本，要求重新规划。PowerShell 自由脚本不复用 Unix 只读白名单；默认先确认，`yolo` 和用户原始终端输入语义不变。
 - 能力目录通过已有 `CapabilityState` 附带可用状态及原因，Windows 仅开放能力台账指定的 21 项；模型收到同一可用清单，执行器再次核对。工具安装支持由设施端口报告，Windows 不启动 Homebrew 准备流程。Windows 自动更新频道尚未配置，使用 NSIS 安装包更新。
