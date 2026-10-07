@@ -3,7 +3,9 @@
 //! macOS 使用系统 `sips`（ImageIO）。Linux 使用 libheif，并应用文件里的旋转与裁切。
 //! 其它平台在 PATH 上有 `heif-convert` 时走同一输出；没有解码器时明确失败，不把文件当成已转换。
 
-use image::{DynamicImage, Rgba, RgbaImage};
+use image::DynamicImage;
+#[cfg(target_os = "linux")]
+use image::{Rgba, RgbaImage};
 use std::path::Path;
 use std::sync::atomic::AtomicBool;
 
@@ -110,16 +112,51 @@ fn decode_with_libheif(source: &Path) -> Result<DynamicImage, String> {
 
 #[cfg(not(any(target_os = "macos", target_os = "linux")))]
 fn decode_with_heif_convert(source: &Path, cancel: &AtomicBool) -> Result<DynamicImage, String> {
-    let program = std::env::split_paths(&std::env::var_os("PATH").unwrap_or_default())
-        .map(|dir| dir.join("heif-convert"))
-        .find(|path| path.is_file())
-        .ok_or(
-            "当前系统没有 HEIF 解码器。请安装 heif-convert，或在 macOS 上使用系统自带的 sips。",
-        )?;
+    let program = crate::tools::lookup_on_path("heif-convert").ok_or(
+        "当前系统没有 HEIF 解码器。请安装 heif-convert，或在 macOS 上使用系统自带的 sips。",
+    )?;
     let temporary = tempfile::tempdir().map_err(|error| error.to_string())?;
     let converted = temporary.path().join("decoded.png");
     let mut command = std::process::Command::new(program);
     command.arg(source).arg(&converted);
     crate::native_steps::run_command(command, cancel)?;
     image::open(converted).map_err(|error| format!("HEIF 无法解码：{error}"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn cancelled_decode_does_not_require_a_source_or_decoder() {
+        let error = decode(Path::new("missing.heic"), &AtomicBool::new(true)).unwrap_err();
+        assert_eq!(error, "已取消 HEIF 解码");
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn windows_decoder_uses_exe_from_path() {
+        const CHILD: &str = "FLEQI_HEIF_LOOKUP_CHILD";
+        if std::env::var_os(CHILD).is_some() {
+            // 空 exe 用于区分 PATH 命中与解码器缺失，不依赖外部解码工具。
+            let error = decode(Path::new("missing.heic"), &AtomicBool::new(false)).unwrap_err();
+            assert!(error.contains("os error 193"), "{error}");
+            return;
+        }
+        let directory = tempfile::tempdir().unwrap();
+        std::fs::write(directory.path().join("heif-convert.exe"), []).unwrap();
+        let output = std::process::Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", "heif::tests::windows_decoder_uses_exe_from_path"])
+            .env(CHILD, "1")
+            .env("PATH", directory.path())
+            .env("PATHEXT", ".EXE")
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
 }

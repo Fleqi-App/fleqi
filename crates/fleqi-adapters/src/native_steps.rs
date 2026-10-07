@@ -611,6 +611,7 @@ impl NativeSteps {
                         },
                         quality as u8,
                         background,
+                        cancel,
                     )
                     .map_err(error)?;
                 image::open(&target).map_err(|e| format!("新图片校验失败，原文件已保留：{e}"))?;

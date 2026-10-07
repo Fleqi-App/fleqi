@@ -10,6 +10,7 @@ use fleqi_adapters::capabilities::FileCapabilities;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::sync::OnceLock;
+use std::sync::atomic::AtomicBool;
 
 /// 逐项结果（写入证据）。
 #[derive(Clone, serde::Serialize)]
@@ -124,6 +125,7 @@ fn run_ffmpeg(args: &[&str]) -> Result<(), Box<dyn std::error::Error>> {
 #[test]
 fn ac_cap_001_030_matrix() {
     let caps = FileCapabilities::new();
+    let cancel = AtomicBool::new(false);
 
     // AC-CAP-001：含空格/Unicode 路径创建文件，读回正文与编码正确。
     scenario!("AC-CAP-001", {
@@ -399,10 +401,22 @@ fn ac_cap_001_030_matrix() {
     scenario!("AC-CAP-012", {
         let dir = workdir("012");
         let png = caps.generate_test_png(&dir, "src.png", 64, 48)?;
-        let jpg =
-            caps.image_convert_with_background(&png, &dir, "jpg", 85, Some([255, 255, 255]))?;
-        let webp =
-            caps.image_convert_with_background(&png, &dir, "webp", 85, Some([255, 255, 255]))?;
+        let jpg = caps.image_convert_with_background(
+            &png,
+            &dir,
+            "jpg",
+            85,
+            Some([255, 255, 255]),
+            &cancel,
+        )?;
+        let webp = caps.image_convert_with_background(
+            &png,
+            &dir,
+            "webp",
+            85,
+            Some([255, 255, 255]),
+            &cancel,
+        )?;
         let pairs = [
             (png.clone(), "jpg"),
             (png.clone(), "webp"),
@@ -418,6 +432,7 @@ fn ac_cap_001_030_matrix() {
                 format,
                 85,
                 Some([255, 255, 255]),
+                &cancel,
             )?;
             let (w, h) = caps.image_dimensions(&out)?;
             assert_eq!(
@@ -471,10 +486,22 @@ fn ac_cap_001_030_matrix() {
     scenario!("AC-CAP-015", {
         let dir = workdir("015");
         let png = caps.generate_test_png(&dir, "photo.png", 300, 200)?;
-        let low =
-            caps.image_convert_with_background(&png, &dir, "jpg", 40, Some([255, 255, 255]))?;
-        let high =
-            caps.image_convert_with_background(&png, &dir, "jpg", 98, Some([255, 255, 255]))?;
+        let low = caps.image_convert_with_background(
+            &png,
+            &dir,
+            "jpg",
+            40,
+            Some([255, 255, 255]),
+            &cancel,
+        )?;
+        let high = caps.image_convert_with_background(
+            &png,
+            &dir,
+            "jpg",
+            98,
+            Some([255, 255, 255]),
+            &cancel,
+        )?;
         assert!(
             low.exists() && high.exists() && png.exists(),
             "原件与两个输出都在"

@@ -3,6 +3,7 @@
 
 use fleqi_adapters::capabilities::{CapabilityError, FileCapabilities};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::AtomicBool;
 
 fn cap() -> FileCapabilities {
     FileCapabilities::new()
@@ -236,6 +237,7 @@ fn cap_image_001_convert_between_png_jpg_webp_all_directions() {
                 format,
                 quality,
                 Some([255, 255, 255]),
+                &AtomicBool::new(false),
             )
             .unwrap_or_else(|e| panic!("{format} 转换失败：{e}"));
         assert!(out.exists(), "{format}");
@@ -371,7 +373,14 @@ fn transparent_png_to_jpeg_requires_explicit_background_and_keeps_source() {
     );
     assert!(!root.path().join("transparent.jpg").exists());
     let result = cap()
-        .image_convert_with_background(&source, root.path(), "jpg", 95, Some([255, 255, 255]))
+        .image_convert_with_background(
+            &source,
+            root.path(),
+            "jpg",
+            95,
+            Some([255, 255, 255]),
+            &AtomicBool::new(false),
+        )
         .unwrap();
     assert!(
         image::open(result)
@@ -381,4 +390,26 @@ fn transparent_png_to_jpeg_requires_explicit_background_and_keeps_source() {
             .all(|pixel| pixel.0.iter().all(|channel| *channel > 250))
     );
     assert_eq!(std::fs::read(source).unwrap(), original);
+}
+
+#[test]
+fn cancelled_image_conversion_keeps_source_and_creates_no_output() {
+    let root = tempfile::tempdir().unwrap();
+    let source = cap()
+        .generate_test_png(root.path(), "source.png", 8, 6)
+        .unwrap();
+    let original = std::fs::read(&source).unwrap();
+    let error = cap()
+        .image_convert_with_background(
+            &source,
+            root.path(),
+            "jpg",
+            90,
+            Some([255, 255, 255]),
+            &AtomicBool::new(true),
+        )
+        .unwrap_err();
+    assert!(error.to_string().contains("已取消"), "{error}");
+    assert_eq!(std::fs::read(&source).unwrap(), original);
+    assert!(!root.path().join("source.jpg").exists());
 }

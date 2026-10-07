@@ -7,32 +7,38 @@ use std::{
     sync::atomic::{AtomicBool, Ordering},
 };
 
-pub fn open_image(source: &Path) -> Result<DynamicImage, String> {
-    load(source, &AtomicBool::new(false))
-}
-
 pub fn load(source: &Path, cancel: &AtomicBool) -> Result<DynamicImage, String> {
-    let header = read_header(source)?;
-    if crate::heif::is_heif(&header) {
-        return crate::heif::decode(source, cancel);
+    if cancel.load(Ordering::Acquire) {
+        return Err("已取消图像解码".into());
     }
-    match decode_with_image_crate(source) {
-        Ok(image) => Ok(image),
-        Err(error) => {
-            #[cfg(target_os = "macos")]
-            {
-                let _ = error;
-                decode_with_sips(source, cancel)
-            }
-            #[cfg(not(target_os = "macos"))]
-            {
-                if cfg!(windows) {
-                    return Err("无法解码此图片；Windows 基础图片处理支持 PNG、JPEG 和 WebP".into());
+    let header = read_header(source)?;
+    let decoded = if crate::heif::is_heif(&header) {
+        crate::heif::decode(source, cancel)
+    } else {
+        match decode_with_image_crate(source) {
+            Ok(image) => Ok(image),
+            Err(error) => {
+                #[cfg(target_os = "macos")]
+                {
+                    let _ = error;
+                    decode_with_sips(source, cancel)
                 }
-                Err(format!("输入无法解码：{error}"))
+                #[cfg(not(target_os = "macos"))]
+                {
+                    if cfg!(windows) {
+                        return Err(
+                            "无法解码此图片；Windows 基础图片处理支持 PNG、JPEG 和 WebP".into()
+                        );
+                    }
+                    Err(format!("输入无法解码：{error}"))
+                }
             }
         }
+    };
+    if cancel.load(Ordering::Acquire) {
+        return Err("已取消图像解码".into());
     }
+    decoded
 }
 
 fn read_header(source: &Path) -> Result<Vec<u8>, String> {
