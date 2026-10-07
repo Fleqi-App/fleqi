@@ -198,6 +198,29 @@ export function ComposerBar({ onOpenSessions, onOpenTerminal, sessionsOpen, pane
   const activeSession = sessions.find((session) => session.id === state.sessionId);
   const displayDirectory = parsed.mode === "terminal" ? activeSession?.currentDirectory ?? contextDirectory : contextDirectory;
   const [queuedLine, setQueuedLine] = useState<string | null>(null);
+  const queuedRequestId = useRef<string | null>(null);
+  useEffect(() => {
+    const sessionId = state.sessionId;
+    if (!sessionId || queuedLine === null) return;
+    let alive = true;
+    const refresh = async () => {
+      try {
+        const withdrawn = await host.adapter.terminalWithdrawnLine(sessionId);
+        if (!alive || !withdrawn || withdrawn.requestId !== queuedRequestId.current) return;
+        queuedRequestId.current = null;
+        setQueuedLine(null);
+        setDraft((current) => current || `!${withdrawn.text}`);
+        setNotice({ tone: "warning", text: "等待命令已撤销，请复核草稿后重新提交。" });
+      } catch (error) {
+        if (alive) setNotice({ tone: "error", text: isAppError(error) ? error.message : String(error) });
+      }
+    };
+    void refresh();
+    const unsubscribe = host.adapter.subscribe((event) => {
+      if (event.kind === "terminalChanged" && event.sessionId === sessionId) void refresh();
+    });
+    return () => { alive = false; unsubscribe(); };
+  }, [host.adapter, state.sessionId, queuedLine]);
   const bubbleSeconds = host.bootstrap ? host.bootstrap.settings.bubbleSeconds : 4.8;
   const feedback = useMemo<ComposerFeedback | null>(() => bubble ? { kind: "bubble", entry: bubble }
     : queuedLine ? { kind: "queued", line: queuedLine } : null, [bubble, queuedLine]);
@@ -278,18 +301,21 @@ export function ComposerBar({ onOpenSessions, onOpenTerminal, sessionsOpen, pane
     setSubmitting(true);
     setNotice(null);
     try {
+      const requestId = newRequestId("composer");
       const result = await host.adapter.terminalSubmitLine(
-        newRequestId("composer"),
+        requestId,
         state.sessionId,
         `!${body}`,
         host.bootstrap?.context?.revision ?? "1",
         (activeSession?.directorySync !== "synced" ? activeSession?.targetDirectory : activeSession?.currentDirectory) ?? contextDirectory ?? "",
       );
       if (result === "sent") {
+        queuedRequestId.current = null;
         setNotice({ tone: "success", text: "已发送到终端" });
         setQueuedLine(null);
         setDraft("");
       } else {
+        queuedRequestId.current = requestId;
         setQueuedLine(body);
         setNotice({ tone: "warning", text: "等待目录同步后自动发送（可取消）" });
       }
@@ -304,6 +330,7 @@ export function ComposerBar({ onOpenSessions, onOpenTerminal, sessionsOpen, pane
     if (!state.sessionId) return;
     try {
       const withdrawn = await host.adapter.terminalCancelQueued(state.sessionId);
+      queuedRequestId.current = null;
       setQueuedLine(null);
       if (withdrawn) setDraft(`!${withdrawn.text}`);
       setNotice({ tone: "neutral", text: "已取消排队；草稿已恢复" });
@@ -398,7 +425,7 @@ export function ComposerBar({ onOpenSessions, onOpenTerminal, sessionsOpen, pane
                 }
               }}
               placeholder={planning ? "正在规划，暂时无法发送；可先准备下一条信息" : terminalMode ? "" : "输入指令或问题；首个半角 ! 进入手动终端"}
-              className={`h-8 min-h-8 w-full resize-none rounded-lg border bg-card px-3 py-1.5 text-sm leading-5 outline-none placeholder:text-muted-foreground ${
+              className={`h-8 min-h-8 w-full resize-none rounded-lg border bg-card px-3 ${host.bootstrap?.buildInfo.targetOs === "windows" ? "py-1" : "py-1.5"} text-sm leading-5 outline-none placeholder:text-muted-foreground ${
                 terminalMode ? "border-success/50 text-terminal-mode-text" : "border-border"
               }`}
             />

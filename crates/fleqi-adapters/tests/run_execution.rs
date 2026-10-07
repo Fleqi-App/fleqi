@@ -80,6 +80,7 @@ fn request(directory: &std::path::Path, scripts: &[&str]) -> RunSubmit {
             steps: scripts
                 .iter()
                 .map(|script| ExecutionStep {
+                    script_runtime: Some(fleqi_domain::execution::ScriptRuntime::current()),
                     kind: StepKind::Script,
                     operation: String::new(),
                     executable_ref: None,

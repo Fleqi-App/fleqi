@@ -19,6 +19,9 @@ pub fn load(source: &Path, cancel: &AtomicBool) -> Result<DynamicImage, String> 
     if let Ok(image) = decoded {
         return Ok(image);
     }
+    if cfg!(windows) {
+        return Err("无法解码此图片；Windows 基础图片处理支持 PNG、JPEG 和 WebP".into());
+    }
     let temporary = tempfile::tempdir().map_err(|e| e.to_string())?;
     let converted = temporary.path().join("decoded.png");
     let mut command = std::process::Command::new("/usr/bin/sips");
@@ -596,14 +599,8 @@ pub fn tool(name: &str) -> Result<PathBuf, String> {
             Err(error) => resolver_error = Some(error),
         }
     }
-    let mut roots = std::env::var_os("PATH")
-        .map(|path| std::env::split_paths(&path).collect::<Vec<_>>())
-        .unwrap_or_default();
-    roots.extend(["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin"].map(PathBuf::from));
-    for root in roots {
-        if let Some(path) = executable_path(&root.join(name)) {
-            return Ok(path);
-        }
+    if let Some(path) = crate::tools::lookup_on_path(name).and_then(|path| executable_path(&path)) {
+        return Ok(path);
     }
     Err(match resolver_error {
         Some(error) => format!("缺少工具 {name}；工具服务解析失败：{error}；请在工具页检查状态"),

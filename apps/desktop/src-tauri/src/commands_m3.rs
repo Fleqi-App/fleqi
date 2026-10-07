@@ -152,6 +152,7 @@ fn plan_from_wire(
         .scripts
         .into_iter()
         .map(|script| ExecutionStep {
+            script_runtime: Some(fleqi_domain::execution::ScriptRuntime::current()),
             kind: StepKind::Script,
             operation: String::new(),
             executable_ref: None,
@@ -304,6 +305,7 @@ pub async fn run_retry<R: Runtime>(
         if !original.state.is_terminal() {
             return Err(AppError::conflict("请先等待任务结束或取消", None));
         }
+        fleqi_application::run_service::validate_script_runtime(&runs.plan(&run_id)?)?;
         if original
             .plan
             .as_ref()
@@ -512,6 +514,8 @@ pub async fn provider_probe<R: Runtime>(
 #[derive(serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CatalogEntry {
+    pub availability: fleqi_domain::platform::CapabilityState,
+    pub unavailable_reason: Option<String>,
     pub id: String,
     pub category: String,
     pub title: String,
@@ -751,8 +755,15 @@ pub async fn run_plan_submit<R: Runtime>(
             .map_err(|error| AppError::internal(error.to_string()))?,
         rules: serde_json::to_value(matched_rules)
             .map_err(|error| AppError::internal(error.to_string()))?,
-        capabilities: serde_json::to_value(crate::catalog::builtin_catalog())
-            .map_err(|error| AppError::internal(error.to_string()))?,
+        capabilities: serde_json::to_value(
+            crate::catalog::builtin_catalog()
+                .into_iter()
+                .filter(|entry| {
+                    entry.availability == fleqi_domain::platform::CapabilityState::Supported
+                })
+                .collect::<Vec<_>>(),
+        )
+        .map_err(|error| AppError::internal(error.to_string()))?,
     };
     let conversation_session = session_id.clone();
     let conversation_prompt = prompt.clone();

@@ -2,10 +2,16 @@
 //! 与 TerminalManager 共用 portable-pty 的显式 CommandBuilder：路径与参数作为
 //! 独立值传递，不经过任何 shell 解析（NFR-SEC-001）；取消终止整个进程组。
 
+#[cfg(windows)]
+pub use crate::windows_process::ProcessRunner;
+#[cfg(not(windows))]
 use portable_pty::{Child, CommandBuilder, MasterPty, PtySize};
+#[cfg(not(windows))]
 use std::io::Read;
 use std::path::PathBuf;
+#[cfg(not(windows))]
 use std::sync::Arc;
+#[cfg(not(windows))]
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::Sender;
 
@@ -39,6 +45,47 @@ pub enum StreamKind {
 pub struct ProcessRunnerPort;
 
 impl fleqi_application::ports::ProcessPort for ProcessRunnerPort {
+    fn spawn_script(
+        &self,
+        runtime: fleqi_domain::execution::ScriptRuntime,
+        script: &str,
+        cwd: &std::path::Path,
+        events: Sender<fleqi_application::ports::ProcessEvent>,
+    ) -> Result<Box<dyn fleqi_application::ports::ProcessHandle>, String> {
+        use fleqi_domain::execution::ScriptRuntime;
+        if runtime == ScriptRuntime::PosixSh {
+            return self.spawn("/bin/sh", &["-c".into(), script.into()], cwd, &[], events);
+        }
+        if !cfg!(windows) {
+            return Err("当前平台不能执行 Windows PowerShell 脚本".into());
+        }
+        use std::io::Write;
+        let mut file = tempfile::Builder::new()
+            .prefix("fleqi-task-")
+            .suffix(".ps1")
+            .tempfile()
+            .map_err(|e| e.to_string())?;
+        file.write_all(b"\xef\xbb\xbf").map_err(|e| e.to_string())?;
+        write!(file, "$ErrorActionPreference = 'Stop'\n[Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false\n$global:LASTEXITCODE = $null\ntrap {{ [Console]::Error.WriteLine($_.ToString()); exit 1 }}\n{script}\nif ($null -ne $LASTEXITCODE) {{ exit $LASTEXITCODE }}\n").map_err(|e| e.to_string())?;
+        let file = file.into_temp_path();
+        let args = vec![
+            "-NoLogo".into(),
+            "-NoProfile".into(),
+            "-NonInteractive".into(),
+            "-ExecutionPolicy".into(),
+            "Bypass".into(),
+            "-File".into(),
+            file.to_string_lossy().into_owned(),
+        ];
+        let inner = self.spawn(
+            &crate::environment::powershell().to_string_lossy(),
+            &args,
+            cwd,
+            &[],
+            events,
+        )?;
+        Ok(Box::new(ScriptHandle { inner, _file: file }))
+    }
     fn spawn(
         &self,
         executable: &str,
@@ -86,12 +133,14 @@ impl fleqi_application::ports::ProcessPort for ProcessRunnerPort {
         )
         .map_err(|e| e.to_string())?;
         Ok(Box::new(RunnerHandle {
+            cancel: runner.cancellation(),
             runner: std::sync::Mutex::new(Some(runner)),
         }))
     }
 }
 
 struct RunnerHandle {
+    cancel: Box<dyn Fn() + Send + Sync>,
     runner: std::sync::Mutex<Option<ProcessRunner>>,
 }
 
@@ -104,14 +153,24 @@ impl fleqi_application::ports::ProcessHandle for RunnerHandle {
         }
     }
     fn cancel(&self) {
-        if let Ok(mut guard) = self.runner.lock()
-            && let Some(runner) = guard.as_mut()
-        {
-            runner.cancel();
-        }
+        (self.cancel)();
     }
 }
 
+struct ScriptHandle {
+    inner: Box<dyn fleqi_application::ports::ProcessHandle>,
+    _file: tempfile::TempPath,
+}
+impl fleqi_application::ports::ProcessHandle for ScriptHandle {
+    fn wait(&self) -> Option<i32> {
+        self.inner.wait()
+    }
+    fn cancel(&self) {
+        self.inner.cancel();
+    }
+}
+
+#[cfg(not(windows))]
 pub struct ProcessRunner {
     child: Box<dyn Child + Send + Sync>,
     /// 保留 master 句柄：进程退出前 PTY 读取端保持打开；Drop 时随 runner 关闭。
@@ -120,7 +179,14 @@ pub struct ProcessRunner {
     pid: i32,
 }
 
+#[cfg(not(windows))]
 impl ProcessRunner {
+    pub fn cancellation(&self) -> Box<dyn Fn() + Send + Sync> {
+        let killer = std::sync::Mutex::new(self.child.clone_killer());
+        Box::new(move || {
+            let _ = killer.lock().expect("killer").kill();
+        })
+    }
     /// 以显式参数向量启动（无 shell）：路径含空格/引号/命令符号也只是单个参数。
     /// 输出经 PTY 合并（stdout/stderr 标记为合并流；区分标记随 M4 视图需要加入）。
     pub fn spawn(request: SpawnRequest, events: Sender<ProcessEvent>) -> std::io::Result<Self> {
@@ -213,11 +279,12 @@ impl ProcessRunner {
     /// 取消：先向子进程 SIGTERM（进程组随 PTY 会话），再 kill() 兜底并关闭 PTY。
     pub fn cancel(&mut self) {
         self.cancelled.store(true, Ordering::SeqCst);
-        // SAFETY: 向本运行器启动的进程发送信号。
+        // Unix 先 SIGTERM 进程组；Windows 由 PTY/Job 的 kill 结束所属进程。
+        #[cfg(unix)]
         unsafe {
             libc::kill(self.pid, libc::SIGTERM);
+            std::thread::sleep(std::time::Duration::from_millis(200));
         }
-        std::thread::sleep(std::time::Duration::from_millis(200));
         let _ = self.child.kill();
     }
 
@@ -230,6 +297,7 @@ impl ProcessRunner {
     }
 }
 
+#[cfg(not(windows))]
 impl Drop for ProcessRunner {
     fn drop(&mut self) {
         self.cancelled.store(true, Ordering::SeqCst);
@@ -239,16 +307,19 @@ impl Drop for ProcessRunner {
 }
 
 /// 将共享的 child 适配回 Child/ChildKiller trait，供 ProcessRunner::wait/kill 使用。
+#[cfg(not(windows))]
 struct WatchableChild {
     child: Arc<std::sync::Mutex<Box<dyn Child + Send + Sync>>>,
 }
 
+#[cfg(not(windows))]
 impl std::fmt::Debug for WatchableChild {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("WatchableChild").finish_non_exhaustive()
     }
 }
 
+#[cfg(not(windows))]
 impl portable_pty::ChildKiller for WatchableChild {
     fn kill(&mut self) -> std::io::Result<()> {
         self.child.lock().expect("child 锁").kill()
@@ -258,6 +329,7 @@ impl portable_pty::ChildKiller for WatchableChild {
     }
 }
 
+#[cfg(not(windows))]
 impl Child for WatchableChild {
     fn try_wait(&mut self) -> std::io::Result<Option<portable_pty::ExitStatus>> {
         self.child.lock().expect("child 锁").try_wait()
@@ -267,5 +339,9 @@ impl Child for WatchableChild {
     }
     fn process_id(&self) -> Option<u32> {
         self.child.lock().expect("child 锁").process_id()
+    }
+    #[cfg(windows)]
+    fn as_raw_handle(&self) -> Option<std::os::windows::io::RawHandle> {
+        self.child.lock().expect("child 锁").as_raw_handle()
     }
 }

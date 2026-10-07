@@ -1,6 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import { release } from "node:os";
 import { fileURLToPath } from "node:url";
 
 export const here = path.dirname(fileURLToPath(import.meta.url));
@@ -8,7 +9,7 @@ export const repoRoot = path.resolve(here, "../../..");
 export const artifactsDir = path.join(repoRoot, "tests/.artifacts/desktop");
 
 /** 测试构建二进制：固定为 workspace target/debug 产物（scripts/test-desktop.mjs 负责构建）。 */
-export const testBinary = path.join(repoRoot, "target", "debug", "fleqi-desktop");
+export const testBinary = path.join(repoRoot, "target", "debug", process.platform === "win32" ? "fleqi-desktop.exe" : "fleqi-desktop");
 
 export function ensureArtifactsDir(): string {
   mkdirSync(artifactsDir, { recursive: true });
@@ -39,7 +40,9 @@ export function writeEvidence(name: string, data: unknown): string {
 /** 当前仍在运行的测试构建进程 PID 列表（空数组表示已全部退出）。 */
 export function runningTestBinaryPids(): number[] {
   try {
-    const out = execFileSync("pgrep", ["-f", "--", testBinary], { encoding: "utf8" });
+    const out = process.platform === "win32"
+      ? execFileSync("powershell.exe", ["-NoProfile", "-Command", "Get-CimInstance Win32_Process -Filter \"name = 'fleqi-desktop.exe'\" | Where-Object { $_.ExecutablePath -eq $env:FLEQI_TEST_BINARY } | Select-Object -ExpandProperty ProcessId"], { env: { ...process.env, FLEQI_TEST_BINARY: testBinary }, encoding: "utf8", windowsHide: true })
+      : execFileSync("pgrep", ["-f", "--", testBinary], { encoding: "utf8" });
     return out
       .split("\n")
       .filter(Boolean)
@@ -51,6 +54,7 @@ export function runningTestBinaryPids(): number[] {
 }
 
 export function hostFacts() {
+  if (process.platform === "win32") return { platform: process.platform, nodeArch: process.arch, windowsVersion: release() };
   const sw = (flag: "-productVersion" | "-buildVersion") => execFileSync("sw_vers", [flag], { encoding: "utf8" }).trim();
   return {
     platform: process.platform,

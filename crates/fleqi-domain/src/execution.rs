@@ -15,10 +15,31 @@ pub enum StepKind {
     Script,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export_to = "packages/contracts/src/bindings/")]
+#[serde(rename_all = "camelCase")]
+pub enum ScriptRuntime {
+    PosixSh,
+    WindowsPowerShell,
+}
+
+impl ScriptRuntime {
+    pub fn current() -> Self {
+        if cfg!(windows) {
+            Self::WindowsPowerShell
+        } else {
+            Self::PosixSh
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[ts(export_to = "packages/contracts/src/bindings/")]
 #[serde(rename_all = "camelCase")]
 pub struct ExecutionStep {
+    /// 旧计划缺失时不猜测 Windows 解释器；必须重新规划。
+    #[serde(default)]
+    pub script_runtime: Option<ScriptRuntime>,
     pub kind: StepKind,
     /// native 步骤的操作名（如 fs.copy）；process/script 为空。
     pub operation: String,
@@ -151,10 +172,13 @@ pub fn policy_decision(policy: AiPolicy, plan: &ExecutionPlan) -> PolicyDecision
                 && !plan.steps.is_empty()
                 && plan.preview_completeness == PlanPreviewCompleteness::Complete
                 && plan.steps.iter().all(|step| match step.kind {
-                    StepKind::Script => step
-                        .script
-                        .as_deref()
-                        .is_some_and(|script| classify_command_trust(script).is_read_only()),
+                    StepKind::Script => {
+                        step.script_runtime != Some(ScriptRuntime::WindowsPowerShell)
+                            && step
+                                .script
+                                .as_deref()
+                                .is_some_and(|script| classify_command_trust(script).is_read_only())
+                    }
                     StepKind::Process => step.executable_ref.as_ref().is_some_and(|executable| {
                         classify_command_trust(&format!("{} {}", executable, step.args.join(" ")))
                             .is_read_only()

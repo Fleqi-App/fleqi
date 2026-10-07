@@ -1050,7 +1050,7 @@ pub fn apply_settings_side_effects(_app: &AppHandle, state: &AppState) {
     state.surface.set_settings_for_interaction(
         &snapshot.settings,
         crate::windows::finder_interaction_active(_app)
-            && fleqi_platform::macos::windows::finder_frame().has_window,
+            && fleqi_platform::host::file_manager_frame().has_window,
     );
     // 热键：设置中的 hotkey 与宿主注册状态一致才视为有效绑定（比较解析后的键与修饰符）。
     let registered = state

@@ -16,6 +16,21 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use ts_rs::TS;
 
+/// 在创建重试会话或执行副作用前检查解释器，旧记录仅保留原有 POSIX 语义。
+pub fn validate_script_runtime(plan: &ExecutionPlan) -> AppResult<()> {
+    use fleqi_domain::execution::ScriptRuntime;
+    if plan.steps.iter().any(|step| {
+        step.kind == StepKind::Script
+            && step.script_runtime.unwrap_or(ScriptRuntime::PosixSh) != ScriptRuntime::current()
+    }) {
+        Err(AppError::unavailable(
+            "脚本未记录当前平台支持的解释器，请重新规划任务",
+        ))
+    } else {
+        Ok(())
+    }
+}
+
 /// Run 记录（持久化 JSON 载荷；输出大块分段走 append_output）。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[ts(export_to = "packages/contracts/src/bindings/")]
@@ -241,6 +256,7 @@ impl RunService {
     }
 
     fn prepare(&self, submit: &RunSubmit) -> AppResult<Vec<PathBuf>> {
+        validate_script_runtime(&submit.plan)?;
         if submit.plan.steps.is_empty() {
             return Err(AppError::unavailable("执行计划没有步骤"));
         }
@@ -855,20 +871,34 @@ impl RunService {
                 partial: output.partial,
             });
         }
-        let (executable, args) = match step.kind {
-            StepKind::Script => (
-                "/bin/sh".to_owned(),
-                vec!["-c".to_owned(), step.script.clone().ok_or("脚本为空")?],
-            ),
-            StepKind::Process => (
-                step.executable_ref.clone().ok_or("可执行文件为空")?,
-                step.args.clone(),
-            ),
-            StepKind::Native => unreachable!(),
-        };
         let (sender, receiver) = std::sync::mpsc::channel();
-        let handle: Arc<dyn crate::ports::ProcessHandle> =
-            Arc::from(self.process.spawn(&executable, &args, cwd, &[], sender)?);
+        let handle: Arc<dyn crate::ports::ProcessHandle> = Arc::from(match step.kind {
+            StepKind::Script => {
+                let runtime = step
+                    .script_runtime
+                    .or_else(|| {
+                        (!cfg!(windows)).then_some(fleqi_domain::execution::ScriptRuntime::PosixSh)
+                    })
+                    .ok_or("旧脚本未记录解释器，请重新规划任务")?;
+                if runtime != fleqi_domain::execution::ScriptRuntime::current() {
+                    return Err("脚本解释器与当前平台不兼容，请重新规划任务".into());
+                }
+                self.process.spawn_script(
+                    runtime,
+                    step.script.as_deref().ok_or("脚本为空")?,
+                    cwd,
+                    sender,
+                )?
+            }
+            StepKind::Process => self.process.spawn(
+                step.executable_ref.as_deref().ok_or("可执行文件为空")?,
+                &step.args,
+                cwd,
+                &[],
+                sender,
+            )?,
+            StepKind::Native => unreachable!(),
+        });
         {
             let mut inner = self.inner.lock().expect("runs");
             inner.entries.get_mut(run_id).expect("run").handle = Some(handle.clone());

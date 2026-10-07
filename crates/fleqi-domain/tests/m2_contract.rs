@@ -21,7 +21,62 @@ fn settings(activation: Activation, hotkey: bool, bar_enabled: bool) -> Settings
     }
 }
 
+#[test]
+fn cancelled_cd_releases_only_its_revision_and_preserves_the_latest_target() {
+    let ready = ShellReadiness {
+        prompt_ready: true,
+        edit_line_empty: true,
+        foreground_is_shell: true,
+        delivering: false,
+    };
+    let mut sync = SyncMachine::new("A");
+    assert!(matches!(
+        sync.target_changed("B", Revision::new(1), &ready, true),
+        SyncDecision::SendCd { .. }
+    ));
+    sync.target_changed("C", Revision::new(2), &ready, true);
+    sync.on_cd_cancelled(Revision::new(0));
+    assert!(sync.shell_became_safe(&ready, true).is_none());
+    sync.on_cd_cancelled(Revision::new(1));
+    assert_eq!(sync.current(), "A");
+    assert_eq!(sync.state(), DirectorySync::Pending);
+    assert!(
+        matches!(sync.shell_became_safe(&ready, true), Some(SyncDecision::SendCd { target, revision }) if target == "C" && revision == Revision::new(2))
+    );
+    sync.went_background();
+    sync.on_cd_cancelled(Revision::new(2));
+    assert_eq!(sync.state(), DirectorySync::Synced);
+    assert!(sync.shell_became_safe(&ready, false).is_none());
+}
+
 // ---------- 显示状态机 ----------
+
+#[test]
+fn changing_activation_while_disabling_clears_previous_hide_suppression() {
+    let mut machine = SurfaceMachine::new(&settings(Activation::Manual, true, true), true);
+    machine.apply(SurfaceEvent::UserShow);
+    machine.apply(SurfaceEvent::UserHide);
+    assert!(machine.auto_show_suppressed());
+    machine.apply(SurfaceEvent::SettingsChanged {
+        settings: settings(Activation::FollowFinder, true, false),
+        has_valid_directory: true,
+    });
+    assert!(!machine.auto_show_suppressed());
+    assert_eq!(machine.visibility(), Visibility::UserHidden);
+    machine.apply(SurfaceEvent::SettingsChanged {
+        settings: settings(Activation::FollowFinder, true, true),
+        has_valid_directory: true,
+    });
+    assert!(matches!(
+        machine.apply(SurfaceEvent::ContextDirectoryChanged {
+            has_valid_directory: true
+        }),
+        SurfaceOutcome::Show {
+            focus_input: false,
+            ..
+        }
+    ));
+}
 
 #[test]
 fn manual_without_hotkey_never_auto_shows_and_manual_show_needs_hotkey() {

@@ -193,21 +193,21 @@ fn main() {
             app.set_activation_policy(tauri::ActivationPolicy::Regular);
             let state = AppState::assemble(app.handle())?;
             app.manage(Arc::clone(&state));
-            #[cfg(not(feature = "desktop-test"))]
+            #[cfg(all(not(feature = "desktop-test"), not(windows)))]
             {
                 let update_app = app.handle().clone();
                 tauri::async_runtime::spawn(async move {
                     let _ = updates::check(&update_app).await;
                 });
             }
-            #[cfg(not(feature = "desktop-test"))]
+            #[cfg(all(not(feature = "desktop-test"), not(windows)))]
             state.tools.prepare();
             let app_for_context_event = app.handle().clone();
             app.listen("context:changed", move |_| {
                 if let Some(state) = app_for_context_event.try_state::<Arc<AppState>>()
                     && let Some(snapshot) = state.context.latest()
                     && windows::finder_interaction_active(&app_for_context_event)
-                    && fleqi_platform::macos::windows::finder_frame().has_window
+                    && fleqi_platform::host::file_manager_frame().has_window
                 {
                     state.surface.on_context_changed(&snapshot);
                 }
@@ -267,7 +267,7 @@ fn main() {
                         if state.quitting.load(Ordering::Acquire) {
                             break;
                         }
-                        if fleqi_platform::macos::windows::finder_frame().foreground == 1 {
+                        if fleqi_platform::host::file_manager_frame().foreground == 1 {
                             state.refresh_context_routed(&app_for_context);
                         }
                     }

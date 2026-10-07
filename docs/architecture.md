@@ -172,7 +172,7 @@ Finder 当前目录保持不变时，用户手动 `cd` 更新真实 currentDirec
 
 `!` 由前端解析为可见模式，宿主再验证 session/terminal 所有权；去除模式标记后将整行及 Enter 投递给该 PTY。终端面板通过原始字节通道处理方向键、Tab、Ctrl+C、Esc、粘贴和交互程序输入，不能复用 AI 的 submit/cancel API。
 
-命令行模式发送与目录控制消息共用每 PTY 的串行写入队列。等待目录同步的新 `!` 命令保留为可取消的 queuedLine，不进入原始输入队列；目标版本改变时撤销自动投递并恢复草稿。终端面板输入继续服务当前程序，新 Finder 目标到来不会清空用户编辑行。
+命令行模式发送使用每 PTY 的串行写入队列；zsh 目录控制沿用该队列，Linux Bash 与 Windows PowerShell 使用独立私有控制通道。等待目录同步的新 `!` 命令保留为可取消的 queuedLine，不进入原始输入队列；目标版本改变时撤销自动投递并恢复草稿。目录请求在途期间若收到新的终端输入，其回执只能更新目录，等待命令退回草稿并提示重新提交；输入和回执处理持有同一会话锁。终端面板输入继续服务当前程序，新 Finder 目标到来不会清空用户编辑行。
 
 取消 AI Run 由 ProcessRunner 终止所属进程树；终端 Ctrl+C 由 PTY 传给前台程序，通常保留 shell；结束会话关闭整个 PTY。macOS/Unix 使用进程组及会话子进程追踪，Windows 适配使用 Job Object/ConPTY 所属进程管理；必须通过无孤儿进程测试。
 
@@ -285,6 +285,24 @@ SQLite 表组：`settings`、`sessions`、`conversation_entries`、`runs`、`run
 启用外键与事务；迁移前保存可恢复数据库副本，失败保留原数据并给诊断入口。损坏历史不能阻止进入设置/诊断。日志保留、输出上限和清理周期集中配置；删除记录只清理对应数据库行和应用拥有的日志文件。JSON 导入先验证版本和所有条目，失败不部分覆盖原数据；不导出 API 密钥。
 
 ## 10. 平台与发布合同
+
+### Windows 11 x64 修复实现（2026-10-06）
+
+- `fleqi-platform` 的 Windows 模块直接调用 Credential Manager 和 Shell COM；COM 对象留在专用 STA，仅向应用层返回路径和状态。Explorer 按真实前台窗口和可见活动 Shell view 匹配，无法唯一匹配或读取完整选区时拒绝生成上下文；不使用窗口枚举第一项作为当前目录。
+- `ContextSource` 新增 `explorer`，保留 `finder`、`picker`。手动选择的有效目录在 Explorer 暂不可用时仍可作为明确的工作上下文。窗口几何通过 Win32 读取物理像素和 DPI；自动显示用不激活窗口的方式，手动独立显示不依赖 Explorer 窗口存在。
+- Windows 持续终端复用 ConPTY 和系统 PowerShell 5.1。宿主完成 ConPTY 光标握手；提示符/编辑状态和目录请求使用当前用户命名管道，并验证连接进程为本会话 shell。控制消息包含请求序号、取消与可见性；PSReadLine 的空闲处理器先处理已收到的控制消息，再核对可见性和真实编辑行后应用最新目录请求，撤销的请求返回独立取消回执。普通终端输出不能充当状态回执。shell 自然退出和主动结束均关闭 ConPTY 并回收输出线程。
+- Windows 一次性任务使用独立管道进程，在挂起启动期间加入独占 Job 后恢复；取消句柄与等待句柄分离。临时 PowerShell 文件使用明确编码、逐任务生命周期及进程级执行策略，不修改用户 profile 或系统持久策略。
+- `ExecutionStep.scriptRuntime` 为可空兼容字段，取值 `posixSh`、`windowsPowerShell`，由宿主填写。Windows 不重试未声明解释器或声明不兼容解释器的旧脚本，要求重新规划。PowerShell 自由脚本不复用 Unix 只读白名单；默认先确认，`yolo` 和用户原始终端输入语义不变。
+- 能力目录通过已有 `CapabilityState` 附带可用状态及原因，Windows 仅开放能力台账指定的 21 项；模型收到同一可用清单，执行器再次核对。工具安装支持由设施端口报告，Windows 不启动 Homebrew 准备流程。Windows 自动更新频道尚未配置，使用 NSIS 安装包更新。
+
+### Linux Bash 目录同步（2026-10-07）
+
+- 构建时编译 Bash loadable builtin 并嵌入适配器，仅加载到 Fleqi 创建的 Bash。模块、Unix socket 位于每会话私有临时目录；不安装系统 Bash、不改用户 profile、不要求用户电脑安装编译器。用户 `.bashrc` 仍加载，已有 `PROMPT_COMMAND`/`PS0` 不被覆盖。
+- 运行时核对 Bash 5.1、5.2.11+（5.2 系列）、5.3 与 Readline 8.1–8.3，并拒绝冲突的输入/事件钩子。通过 `rl_getc_function` 等待输入时检查真实编辑器状态；仅主提示符空行且无待读取键盘数据时调用 Bash 自身的 `cd` builtin。路径以原始字节十六进制传输，固定目录句柄后执行 `cd -P -- /proc/self/fd/...`，避免 shell 求值、CDPATH/cdspell 改写目标及链接别名重复同步。
+- 宿主与模块通过 `SO_PEERCRED` 双向核对 UID 和本会话 shell/宿主 PID；普通 PTY 输出不作状态证据。控制帧有长度限制、递增请求序号和上下文 revision，键盘输入轮次防止迟到空闲回执重新开放投递。子 shell 不消费父进程通道。
+- 可见性变化撤销模块内尚未执行的请求；独立取消回执仅释放匹配的在途请求，保留最新目标与有效草稿。恢复先更新目标，再开放模块投递。目录确认、实际 cwd 和状态机一致后才允许等待命令继续；通道中断或不兼容保留原始终端并降级为状态未知，不回退到 PTY 注入目录命令。
+
+以下矩阵描述平台长期目标；Windows 与 Linux Bash 本轮范围以上述合同为准，其它 Linux 能力没有因此扩大。
 
 | 能力 | macOS 首版实现 | Windows/Linux 后续适配 |
 |---|---|---|

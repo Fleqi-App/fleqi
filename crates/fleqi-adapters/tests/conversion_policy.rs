@@ -28,6 +28,7 @@ fn convert(
         ("background", "#ffffff"),
     ]);
     let step = ExecutionStep {
+        script_runtime: None,
         kind: StepKind::Native,
         operation: operation.into(),
         executable_ref: None,

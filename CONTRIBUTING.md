@@ -6,6 +6,8 @@
 
 Node 26.8.1、pnpm 10.33.4（corepack）、rustup 分发的 Rust 1.98.0（`rust-toolchain.toml` 锁定，含 rustfmt/clippy）、Xcode 命令行工具与 macOS SDK。`pnpm install --frozen-lockfile` 后运行 `pnpm run doctor` 核对。
 
+Windows 修复范围为 Windows 11 x64：同一 Node/pnpm/Rust 版本，使用 `x86_64-pc-windows-msvc`、Visual Studio C++ 构建工具、Windows SDK、系统 PowerShell 5.1 和 WebView2。在 PowerShell 中运行 `pnpm.cmd install --frozen-lockfile`、`pnpm.cmd run doctor`；不要关闭 engine-strict 或替换为不匹配的工具链。`pnpm.cmd run test:desktop` 使用隔离数据和自建 Explorer 窗口，需保持桌面解锁且测试期间不切换窗口。普通安装包用 `pnpm.cmd run tauri build --bundles nsis`，自动化测试构建不用于分发。
+
 ## 提交前
 
 - 文档：核对 ID、引用、行为与默认值一致性；运行 `pnpm check:docs`、`pnpm check:traceability`，涉及参考资产时运行 `pnpm check:references`。格式遵循 `.editorconfig`（UTF-8、LF、末尾换行，2 空格；Rust 4 空格）。

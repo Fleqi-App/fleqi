@@ -5,6 +5,44 @@
 
 本文件汇总产品界面与交互验收（M4）与发布验收（M5）的证据索引、执行方式与已知边界。所有原生证据由 `pnpm test:desktop`（scripts/test-desktop.mjs）生成于 `tests/.artifacts/desktop/`，UI 单测/组件证据由 `pnpm test:ui` 生成。证据文件为运行产物（.gitignore 忽略），本文记录其文件名与核对方式；重新运行即可再生。
 
+## Linux Bash 目录同步与复核修复验证
+
+2026-10-07：在 Windows 主机的真实 WSL Ubuntu PTY 内运行，GNU Bash 版本夹具从官方源码构建到临时缓存，未替换系统 Bash。以下测试验证适配器与业务编排，不替代 Linux 桌面 GUI 验收。
+
+| 执行入口 | 已验证结果 |
+|---|---|
+| `cargo test --locked -p fleqi-adapters --lib bash_` | 系统 Bash 5.3.9：实际目录切换、特殊字符和链接别名、编辑行保留、最新目标、Ctrl+U/Ctrl+C、续行/heredoc、`read -e` 与超时、忙碌取消、隐藏、vi 模式、退出码、cdspell 防误入、OSC 伪造拒绝、模块卸载后手动输入，以及错误 PID 连接拒绝 |
+| `FLEQI_TEST_BASH=/absolute/path/to/bash cargo test --locked -p fleqi-adapters --lib bash_tests` | 同一真实 PTY 回归在 Bash 5.1.0 和 5.2.15 通过；对 Bash 5.2.0 另加 `FLEQI_TEST_EXPECT_UNSUPPORTED=1`，确认自动同步被拒、状态未知且手动输入实际落盘 |
+| `cargo test --locked -p fleqi-adapters --test linux_trash --test capabilities` | 2 项回收站与 17 项基础能力通过；拒绝符号链接并保留链接与目标，正常文件真实移入回收站；`./` ZIP 合法条目往返、`../` 越界拒绝。夹具 TMPDIR 与 XDG_DATA_HOME 置于同卷独立临时目录，跨卷不误计正常往返 |
+| `cargo test --locked -p fleqi-platform --test linux_platform` | 11 项通过，含绝对路径核验、同名目录标题拒绝；当前无图形文件管理器，不计真实窗口验收 |
+| `cargo test --locked -p fleqi-domain -p fleqi-application` | Windows 上共享业务通过，新增取消回执、旧目标撤销、pending 状态及后台恢复编排验证；Linux 的手选目录保留测试亦已单独运行 |
+| Windows 定向测试与 `pnpm --filter @fleqi/ui run test:unit` | Windows 核心 8 项、凭据 2 项、同名输出 4 项、宿主 5 项；UI 51 项通过，含 Windows 平台能力状态和 Bash 降级提示；类型与 UI 构建通过 |
+| `cargo clippy --locked -p fleqi-adapters -p fleqi-platform --no-deps -- -D warnings` | Linux 与 Windows 通过；模块 C 编译启用 `-Wall -Wextra -Werror` |
+
+Bash 5.2 早期补丁存在 `read -e -t` 超时问题，因此运行时只接受 5.2.11+；[GNU 补丁 11](https://ftp.gnu.org/gnu/bash/bash-5.2-patches/bash52-011) 是该版本门槛的依据。版本声明不代表逐个发行版均完成测试。本轮未重建安装包、未运行 Linux/macOS 原生 GUI，新增 Linux CI 未远程执行；旧 Windows 包仍按下节日期归档。
+
+## Windows 11 x64 核心修复验证
+
+2026-10-06–07：本轮开放范围为能力台账的 21 项基础能力，完整 Windows 首版不在本轮通过口径中。
+
+| 层次 | 执行入口 | 核对内容与证据 |
+|---|---|---|
+| 共享业务 | `cargo test --locked -p fleqi-domain -p fleqi-application` | 状态机、策略、上下文、会话/任务、持久化接口及旧脚本解释器兼容；Windows 自由脚本先确认，不把原 POSIX 白名单当成 Windows 证明 |
+| Windows 平台 | `cargo test --locked -p fleqi-platform --test windows_platform` | 真实 Credential Manager 隔离命名空间增删改查，测试项清理，不使用生产凭据键 |
+| Windows 执行/文件 | `cargo test --locked -p fleqi-adapters --test windows_core -- --test-threads=1` | 真实 PowerShell、ConPTY 光标握手、编辑行/忙碌保护、中文目录与实际文件、exit 回收、Job 子进程取消、文件/ZIP/图片/PDF、系统回收站往返；本机 C:→E: 跨卷、占用文件保留原件、中文长路径、目录 ZIP 往返及 junction 越界拒绝 |
+| 同名输出 | `cargo test --locked -p fleqi-adapters --test name_conflict` | 经生产 NativeSteps 验证同名覆盖、保留原件和失败/取消不截断已有文件 |
+| 前端 | `pnpm --filter @fleqi/ui run test:unit`、`pnpm typecheck` | 现有界面行为及类型；Windows 界面由原生用例补充，不将浏览器 preview 作为宿主证据 |
+| 桌面 | `pnpm run test:desktop` | WebView2 + embedded WebDriver + 真实 IPC；独立数据目录、自建 Explorer 窗口及双标签页、原生目录选择/取消、回环模型 HTTP、文件结果、输入条跟随与重启恢复；证据 `windows-*.json/png` |
+| 普通安装包 | `pnpm run verify:package` | 普通 release 包的 PE、载荷哈希、安装/覆盖、真实 IPC 就绪、正常退出和卸载；证据 `tests/.artifacts/package/windows-package-evidence.json` |
+
+`windows-follow-condition.json` 单独记录 Explorer 前台条件。驱动无法把自建窗口置于前台时，跟随/移动/目录同步用例记为未验证，不计通过，也不阻止其它独立功能验证。测试窗口只操作 `windows-data-*/fixtures/`，不关闭用户窗口；模型服务仅验证 HTTP/规划/审批/执行链路，不代表外部模型质量验收。
+
+最终结果：共享业务 105 项、Windows 凭据 2 项、Windows 核心 8 项、输出名称/冲突 4 项、宿主单测 5 项，共 124 项 Rust 测试通过；UI 47 项、WebView2 原生 10 项通过。最终 `windows-follow-condition.json` 的 `verified=true`，无跳过项。原生目录选择器分别核对真实中文目录返回值和取消后上下文不变。
+
+额外尝试的 `cargo test -p fleqi-desktop` 中，既有 macOS 更新器集成测试 `tests/updater.rs` 在 Windows 加载阶段返回 `0xc0000139`，未计通过；Windows 自动更新已明确关闭，本轮没有改写或绕过该 macOS 发行测试。宿主本身的 5 项单测通过。
+
+剩余人工/设备条件：100%/150% 与混合 DPI、多屏边界、原生 IME/读屏、托盘鼠标交互、UNC 网络共享和外部真实模型；本机已覆盖单屏 200% 缩放。macOS CI 已保留，本机没有运行 macOS 原生回归，新 Windows CI 尚未远程执行。条件项完成前不得声明完整 Windows 验收通过。
+
 ## 1. AC-FLOW 原生矩阵（真实 IPC + 真实 zsh + 真实 Finder）
 
 | 验收 | 证据文件 | 覆盖内容 |

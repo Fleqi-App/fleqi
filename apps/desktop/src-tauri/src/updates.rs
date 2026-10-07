@@ -47,6 +47,11 @@ impl Drop for Operation<'_> {
 }
 
 pub async fn check<R: Runtime>(app: &AppHandle<R>) -> AppResult<AppUpdateStatus> {
+    if cfg!(windows) {
+        return Err(AppError::unavailable(
+            "Windows 自动更新尚未配置，请使用安装包更新",
+        ));
+    }
     let updates = app.state::<Updates>();
     if updates.working.swap(true, Ordering::AcqRel) {
         return Ok(updates.snapshot());

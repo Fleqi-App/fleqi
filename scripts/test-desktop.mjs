@@ -406,6 +406,10 @@ function finalize(runTag, wdioExitCode, runDataDir) {
   return wdioExitCode === 0;
 }
 
+if (process.platform === "win32") {
+  await import("./test-desktop-windows.mjs");
+  process.exit(0);
+}
 if (process.platform !== "darwin") {
   console.error("test:desktop 目前只在 macOS 运行（首发平台）。");
   process.exit(1);

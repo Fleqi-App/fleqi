@@ -92,6 +92,12 @@ fn service() -> CollectionService {
     )
 }
 
+const PROJECT_DIR: &str = if cfg!(windows) {
+    "C:/Users/test/项目"
+} else {
+    "/Users/me/项目"
+};
+
 #[test]
 fn rule_crud_with_all_four_scopes() {
     let service = service();
@@ -99,9 +105,9 @@ fn rule_crud_with_all_four_scopes() {
         (RuleScope::Global, None, None),
         (
             RuleScope::Directory {
-                path: "/Users/me/项目".into(),
+                path: PROJECT_DIR.into(),
             },
-            Some("/Users/me/项目"),
+            Some(PROJECT_DIR),
             None,
         ),
         (
@@ -113,10 +119,10 @@ fn rule_crud_with_all_four_scopes() {
         ),
         (
             RuleScope::DirectoryAndPhrase {
-                path: "/Users/me/项目".into(),
+                path: PROJECT_DIR.into(),
                 phrase: "部署".into(),
             },
-            Some("/Users/me/项目"),
+            Some(PROJECT_DIR),
             Some("部署"),
         ),
     ];
@@ -151,7 +157,7 @@ fn matching_rules_respect_scope_semantics() {
             "目录规则",
             "项目内应用",
             Some(RuleScope::Directory {
-                path: "/Users/me/项目".into(),
+                path: PROJECT_DIR.into(),
             }),
         )
         .unwrap();
@@ -169,19 +175,19 @@ fn matching_rules_respect_scope_semantics() {
             "组合规则",
             "项目内部署",
             Some(RuleScope::DirectoryAndPhrase {
-                path: "/Users/me/项目".into(),
+                path: PROJECT_DIR.into(),
                 phrase: "部署".into(),
             }),
         )
         .unwrap();
     // 场景：项目目录 + 提示含"部署" → 全部四条命中。
-    let hit = service.matching_rules("/Users/me/项目", "帮我部署到测试环境");
+    let hit = service.matching_rules(PROJECT_DIR, "帮我部署到测试环境");
     assert_eq!(hit.len(), 4, "{hit:?}");
     // 场景：其它目录 + 无关键词 → 仅全局。
     let miss = service.matching_rules("/tmp", "查看文件");
     assert_eq!(miss.len(), 1, "{miss:?}");
     // 场景：项目目录但无关键词 → 全局 + 目录。
-    let dir_only = service.matching_rules("/Users/me/项目", "查看文件");
+    let dir_only = service.matching_rules(PROJECT_DIR, "查看文件");
     assert_eq!(dir_only.len(), 2);
     // 停用规则不再命中。
     let disabled = service
@@ -193,7 +199,7 @@ fn matching_rules_respect_scope_semantics() {
     service
         .update_rule(&disabled.id, None, Some(false), None)
         .unwrap();
-    let after = service.matching_rules("/Users/me/项目", "查看文件");
+    let after = service.matching_rules(PROJECT_DIR, "查看文件");
     assert_eq!(after.len(), 1, "停用后仅全局");
 }
 

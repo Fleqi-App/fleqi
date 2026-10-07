@@ -204,7 +204,7 @@ export function TerminalPanel({ sessionId, onClose }: { sessionId: string | null
         <h2 className="text-sm font-semibold">终端</h2>
         {snapshot && (
           <Badge tone={snapshot.shellReadiness === "ready" ? "success" : "warning"} data-testid="terminal-readiness">
-            {snapshot.shellReadiness === "ready" ? "可输入" : "忙碌"}
+            {snapshot.shellReadiness === "ready" ? "可输入" : snapshot.shellReadiness === "unknown" ? "状态未知" : "忙碌"}
           </Badge>
         )}
         <span className="min-w-0 flex-1 truncate font-mono text-xs text-muted-foreground" data-testid="terminal-directory">
@@ -214,6 +214,7 @@ export function TerminalPanel({ sessionId, onClose }: { sessionId: string | null
           <X aria-hidden="true" className="size-4" />
         </Button>}
       </header>
+      {snapshot?.shell === "/bin/bash" && snapshot.shellReadiness === "unknown" && <InlineStatus tone="warning" className="px-3 py-1">Bash 自动目录同步尚未就绪或不可用，请在终端手动操作。</InlineStatus>}
       {error && (
         <InlineStatus tone="error" className="px-3 py-1">
           {error}

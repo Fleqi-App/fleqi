@@ -205,6 +205,7 @@ fn plan(effects: Vec<Effect>, script: &str) -> ExecutionPlan {
         capability_id: None,
         context_id: "ctx-1".into(),
         steps: vec![ExecutionStep {
+            script_runtime: Some(fleqi_domain::execution::ScriptRuntime::current()),
             kind: StepKind::Script,
             operation: String::new(),
             executable_ref: None,
@@ -316,6 +317,17 @@ fn read_only_plan_auto_executes_and_succeeds() {
         policy: AiPolicy::ReadOnlyAutoConfirmChanges,
     };
     let record = service.submit("r1", submit).expect("提交");
+    let record = if cfg!(windows) {
+        assert_eq!(
+            record.state,
+            fleqi_domain::execution::RunState::AwaitingApproval
+        );
+        service
+            .approve("approve-readonly-windows", &record.id, record.plan_revision)
+            .unwrap()
+    } else {
+        record
+    };
     assert_eq!(
         record.state,
         fleqi_domain::execution::RunState::Running,
@@ -338,6 +350,24 @@ fn read_only_plan_auto_executes_and_succeeds() {
     assert!(
         events.0.lock().unwrap().len() >= 2,
         "submit and completion emit changes"
+    );
+}
+
+#[test]
+fn script_runtime_validation_preserves_legacy_meaning_before_retry() {
+    use fleqi_domain::execution::ScriptRuntime;
+    let mut plan = plan(vec![read_effect()], "echo fixture");
+    assert!(fleqi_application::run_service::validate_script_runtime(&plan).is_ok());
+    plan.steps[0].script_runtime = Some(if cfg!(windows) {
+        ScriptRuntime::PosixSh
+    } else {
+        ScriptRuntime::WindowsPowerShell
+    });
+    assert!(fleqi_application::run_service::validate_script_runtime(&plan).is_err());
+    plan.steps[0].script_runtime = None;
+    assert_eq!(
+        fleqi_application::run_service::validate_script_runtime(&plan).is_ok(),
+        !cfg!(windows)
     );
 }
 
