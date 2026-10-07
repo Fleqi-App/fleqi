@@ -10,6 +10,8 @@ pub fn builtin_catalog() -> Vec<CatalogEntry> {
                  description: &str,
                  inputs: &str,
                  dependencies: &[&str]| CatalogEntry {
+        availability: fleqi_domain::platform::CapabilityState::Supported,
+        unavailable_reason: None,
         id: id.into(),
         category: category.into(),
         title: title.into(),
@@ -473,6 +475,8 @@ pub fn builtin_catalog() -> Vec<CatalogEntry> {
     for spec in fleqi_application::capability_service::extended_descriptors() {
         entries.retain(|entry| entry.id != spec.id);
         entries.push(CatalogEntry {
+            availability: fleqi_domain::platform::CapabilityState::Supported,
+            unavailable_reason: None,
             id: spec.id,
             category: spec.category,
             title: spec.title,
@@ -484,6 +488,12 @@ pub fn builtin_catalog() -> Vec<CatalogEntry> {
             },
             dependencies: spec.dependencies,
         });
+    }
+    for entry in &mut entries {
+        if !fleqi_application::capability_service::platform_available(&entry.id) {
+            entry.availability = fleqi_domain::platform::CapabilityState::Unsupported;
+            entry.unavailable_reason = Some("Windows 暂未开放此能力".into());
+        }
     }
     entries
 }

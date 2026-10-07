@@ -146,7 +146,8 @@ impl FileCapabilities {
                 .map(PathBuf::from)
                 .unwrap_or_else(|| "untitled".into());
             let destination = unique_destination(target, &name);
-            let result = copy_recursive(&source, &destination);
+            let result = reject_nested_destination(&source, target)
+                .and_then(|_| copy_recursive(&source, &destination));
             items.push(ItemResult {
                 source,
                 destination: Some(destination),
@@ -180,13 +181,15 @@ impl FileCapabilities {
                 .map(PathBuf::from)
                 .unwrap_or_else(|| "untitled".into());
             let destination = unique_destination(target, &name);
-            let result = std::fs::rename(&source, &destination).or_else(|_| {
-                copy_recursive(&source, &destination)?;
-                if source.is_dir() {
-                    std::fs::remove_dir_all(&source)
-                } else {
-                    std::fs::remove_file(&source)
-                }
+            let result = reject_nested_destination(&source, target).and_then(|_| {
+                std::fs::rename(&source, &destination).or_else(|_| {
+                    copy_recursive(&source, &destination)?;
+                    if source.is_dir() {
+                        std::fs::remove_dir_all(&source)
+                    } else {
+                        std::fs::remove_file(&source)
+                    }
+                })
             });
             items.push(ItemResult {
                 source,
@@ -343,23 +346,13 @@ impl FileCapabilities {
         Ok(BatchReport::from_items(items))
     }
 
-    /// CAP-FILE-008：移入回收站（macOS Finder Apple Events），可恢复（AC-CAP-008）。
+    /// CAP-FILE-008：移入回收站，可恢复（AC-CAP-008）。
+    /// macOS 使用 Finder；Linux 使用 FreeDesktop Trash；Windows 使用资源管理器回收站。
     pub fn trash(&self, sources: Vec<PathBuf>) -> TrashReport {
         let mut report = TrashReport::default();
         for source in sources {
-            // AppleScript 固定脚本：路径以 POSIX file 传递，不拼接用户路径到脚本字符串。
-            let script = format!(
-                "tell application \"Finder\" to delete (POSIX file \"{}\" as alias)",
-                source
-                    .to_string_lossy()
-                    .replace('\\', "\\\\")
-                    .replace('"', "\\\"")
-            );
-            let status = std::process::Command::new("/usr/bin/osascript")
-                .arg("-e")
-                .arg(&script)
-                .output();
-            let ok = matches!(&status, Ok(output) if output.status.success());
+            let status = move_to_trash(&source);
+            let ok = status.is_ok();
             report.items.push(ItemResult {
                 source: source.clone(),
                 destination: None,
@@ -370,22 +363,15 @@ impl FileCapabilities {
             if ok {
                 report.succeeded += 1;
                 // 记录回收站内的新位置（同名取最近修改），供恢复使用。
-                destination = Self::locate_in_trash(&source);
+                destination = status
+                    .ok()
+                    .flatten()
+                    .or_else(|| Self::locate_in_trash(&source));
                 if let Some(trash_path) = &destination {
                     report.restore_paths.push(trash_path.clone());
                 }
             } else {
-                let message = match &status {
-                    Err(e) => Some(e.to_string()),
-                    Ok(output) => {
-                        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_owned();
-                        Some(if stderr.is_empty() {
-                            "Finder 删除被拒绝（权限/不存在）".into()
-                        } else {
-                            stderr
-                        })
-                    }
-                };
+                let message = status.err();
                 if let Some(item) = report.items.last_mut() {
                     item.message = message;
                 }
@@ -397,20 +383,25 @@ impl FileCapabilities {
         report
     }
 
-    /// 在 ~/.Trash 中定位刚被删除的条目：同名且最近修改优先。
+    /// 在平台回收站中定位刚被删除的条目：同名且最近修改优先。
     fn locate_in_trash(original: &Path) -> Option<PathBuf> {
-        let home = std::env::var("HOME").ok()?;
         let name = original.file_name()?.to_str()?.to_owned();
-        let trash = Path::new(&home).join(".Trash");
         let mut best: Option<(std::time::SystemTime, PathBuf)> = None;
-        for entry in std::fs::read_dir(&trash).ok()?.flatten() {
-            let path = entry.path();
-            if path.file_name()?.to_str()? != name {
+        for trash in trash_lookup_dirs() {
+            let Ok(entries) = std::fs::read_dir(&trash) else {
                 continue;
-            }
-            let modified = entry.metadata().and_then(|m| m.modified()).ok()?;
-            if best.as_ref().map(|(t, _)| modified > *t).unwrap_or(true) {
-                best = Some((modified, path));
+            };
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.file_name().and_then(|n| n.to_str()) != Some(name.as_str()) {
+                    continue;
+                }
+                let Ok(modified) = entry.metadata().and_then(|m| m.modified()) else {
+                    continue;
+                };
+                if best.as_ref().map(|(t, _)| modified > *t).unwrap_or(true) {
+                    best = Some((modified, path));
+                }
             }
         }
         best.map(|(_, path)| path)
@@ -434,7 +425,17 @@ impl FileCapabilities {
         std::fs::create_dir_all(parent).map_err(|e| CapabilityError::Failed(e.to_string()))?;
         let target = unique_destination(parent, original);
         std::fs::rename(restore_path, &target)
-            .map_err(|e| CapabilityError::Failed(format!("恢复失败：{e}")))
+            .map_err(|e| CapabilityError::Failed(format!("恢复失败：{e}")))?;
+        if let (Some(name), Some(files)) = (restore_path.file_name(), restore_path.parent())
+            && files.ends_with("files")
+            && let Some(root) = files.parent()
+        {
+            let mut name = name.to_os_string();
+            name.push(".trashinfo");
+            let info = root.join("info").join(name);
+            let _ = std::fs::remove_file(info);
+        }
+        Ok(())
     }
 
     // ---------- ZIP（CAP-ZIP-001..003） ----------
@@ -483,6 +484,9 @@ impl FileCapabilities {
         target: &Path,
     ) -> Result<BatchReport, CapabilityError> {
         std::fs::create_dir_all(target).map_err(|e| CapabilityError::Failed(e.to_string()))?;
+        let target = target
+            .canonicalize()
+            .map_err(|e| CapabilityError::Failed(e.to_string()))?;
         let file =
             std::fs::File::open(archive).map_err(|e| CapabilityError::Failed(e.to_string()))?;
         let mut reader =
@@ -493,10 +497,10 @@ impl FileCapabilities {
                 .by_index(index)
                 .map_err(|e| CapabilityError::Failed(e.to_string()))?;
             let name = entry.name().to_owned();
-            let destination = target.join(&name);
-            // 越界路径（.. 或绝对）不写到目标之外。
-            let safe = destination.starts_with(target) && !name.split('/').any(|part| part == "..");
-            if !safe {
+            let destination = entry
+                .enclosed_name()
+                .and_then(|relative| safe_zip_destination(&target, &relative, &name));
+            let Some(destination) = destination else {
                 items.push(ItemResult {
                     source: archive.to_path_buf(),
                     destination: None,
@@ -504,7 +508,7 @@ impl FileCapabilities {
                     message: Some(format!("越界条目拒绝：{name}")),
                 });
                 continue;
-            }
+            };
             let result = (|| -> std::io::Result<PathBuf> {
                 if entry.is_dir() {
                     std::fs::create_dir_all(&destination)?;
@@ -1275,7 +1279,22 @@ impl TrashReport {
     }
 }
 
+fn reject_nested_destination(source: &Path, target: &Path) -> std::io::Result<()> {
+    if source.is_dir() && target.canonicalize()?.starts_with(source.canonicalize()?) {
+        return Err(std::io::Error::other("不能把目录复制或移动到自身内部"));
+    }
+    Ok(())
+}
+
 fn copy_recursive(source: &Path, destination: &Path) -> std::io::Result<()> {
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt;
+        let metadata = std::fs::symlink_metadata(source)?;
+        if metadata.file_attributes() & 0x400 != 0 {
+            return Err(std::io::Error::other("复制不会跟随重解析点"));
+        }
+    }
     if source.is_dir() {
         std::fs::create_dir_all(destination)?;
         for entry in std::fs::read_dir(source)? {
@@ -1308,10 +1327,24 @@ fn append_to_zip<W: Write + Seek>(
     base: &Path,
     options: zip::write::FileOptions<'_, ()>,
 ) -> Result<(), CapabilityError> {
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt;
+        let metadata = std::fs::symlink_metadata(source)
+            .map_err(|e| CapabilityError::Failed(e.to_string()))?;
+        if metadata.file_attributes() & 0x400 != 0 {
+            return Err(CapabilityError::InvalidInput(
+                "ZIP 打包不会跟随重解析点".into(),
+            ));
+        }
+    }
     let relative = source.strip_prefix(base).unwrap_or(source);
+    let name = relative.to_string_lossy().into_owned();
+    #[cfg(windows)]
+    let name = name.replace('\\', "/");
     if source.is_dir() {
         writer
-            .add_directory(relative.to_string_lossy().into_owned(), options)
+            .add_directory(name, options)
             .map_err(|e| CapabilityError::Failed(e.to_string()))?;
         for entry in
             std::fs::read_dir(source).map_err(|e| CapabilityError::Failed(e.to_string()))?
@@ -1323,7 +1356,7 @@ fn append_to_zip<W: Write + Seek>(
         let mut file =
             std::fs::File::open(source).map_err(|e| CapabilityError::Failed(e.to_string()))?;
         writer
-            .start_file(relative.to_string_lossy().into_owned(), options)
+            .start_file(name, options)
             .map_err(|e| CapabilityError::Failed(e.to_string()))?;
         std::io::copy(&mut file, writer).map_err(|e| CapabilityError::Failed(e.to_string()))?;
     }
@@ -1374,4 +1407,278 @@ fn extract_paragraphs(xml: &str) -> String {
         }
     }
     lines.join("\n")
+}
+
+#[cfg(windows)]
+pub(crate) fn valid_windows_filename(text: &str) -> bool {
+    let base = text
+        .split('.')
+        .next()
+        .unwrap_or_default()
+        .to_ascii_uppercase();
+    !text.is_empty()
+        && !text.contains(['<', '>', ':', '"', '/', '\\', '|', '?', '*'])
+        && !text.chars().any(|c| c < ' ')
+        && !text.ends_with([' ', '.'])
+        && !matches!(base.as_str(), "CON" | "PRN" | "AUX" | "NUL")
+        && !base
+            .strip_prefix("COM")
+            .or_else(|| base.strip_prefix("LPT"))
+            .is_some_and(|n| {
+                matches!(
+                    n,
+                    "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" | "¹" | "²" | "³"
+                )
+            })
+}
+
+fn safe_zip_destination(root: &Path, relative: &Path, name: &str) -> Option<PathBuf> {
+    if name.contains('\\')
+        || Path::new(name).components().any(|part| {
+            !matches!(
+                part,
+                std::path::Component::Normal(_) | std::path::Component::CurDir
+            )
+        })
+        || relative
+            .components()
+            .any(|part| !matches!(part, std::path::Component::Normal(_)))
+    {
+        return None;
+    }
+    let mut destination = root.to_path_buf();
+    for part in relative.components() {
+        let std::path::Component::Normal(part) = part else {
+            return None;
+        };
+        #[cfg(windows)]
+        {
+            if !valid_windows_filename(part.to_str()?) {
+                return None;
+            }
+        }
+        destination.push(part);
+        if let Ok(metadata) = std::fs::symlink_metadata(&destination) {
+            if metadata.file_type().is_symlink() {
+                return None;
+            }
+            #[cfg(windows)]
+            {
+                use std::os::windows::fs::MetadataExt;
+                if metadata.file_attributes() & 0x400 != 0 {
+                    return None;
+                }
+            }
+        }
+    }
+    Some(destination)
+}
+
+fn move_to_trash(source: &Path) -> Result<Option<PathBuf>, String> {
+    if !source.exists() {
+        return Err(format!("找不到 {}", source.display()));
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let script = format!(
+            "tell application \"Finder\" to delete (POSIX file \"{}\" as alias)",
+            source
+                .to_string_lossy()
+                .replace('\\', "\\\\")
+                .replace('"', "\\\"")
+        );
+        let output = std::process::Command::new("/usr/bin/osascript")
+            .arg("-e")
+            .arg(&script)
+            .output()
+            .map_err(|error| error.to_string())?;
+        if output.status.success() {
+            return Ok(None);
+        }
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_owned();
+        return Err(if stderr.is_empty() {
+            "Finder 删除被拒绝（权限/不存在）".into()
+        } else {
+            stderr
+        });
+    }
+    #[cfg(target_os = "linux")]
+    {
+        freedesktop_trash(source).map(Some)
+    }
+    #[cfg(target_os = "windows")]
+    {
+        windows_recycle(source).map(|()| None)
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
+    {
+        let _ = source;
+        Err("当前平台没有回收站适配".into())
+    }
+}
+
+fn trash_lookup_dirs() -> Vec<PathBuf> {
+    let mut dirs = Vec::new();
+    if cfg!(windows) {
+        return dirs;
+    }
+    if let Ok(home) = std::env::var("HOME") {
+        let home = PathBuf::from(home);
+        dirs.push(home.join(".Trash"));
+        let data = std::env::var_os("XDG_DATA_HOME")
+            .map(PathBuf::from)
+            .filter(|path| path.is_absolute())
+            .unwrap_or_else(|| home.join(".local/share"));
+        dirs.push(data.join("Trash").join("files"));
+    }
+    dirs
+}
+
+#[cfg(target_os = "linux")]
+fn freedesktop_trash(source: &Path) -> Result<PathBuf, String> {
+    use std::fmt::Write as _;
+    use std::os::unix::ffi::OsStrExt;
+    if std::fs::symlink_metadata(source)
+        .map_err(|error| error.to_string())?
+        .file_type()
+        .is_symlink()
+    {
+        return Err("回收站不跟随符号链接；链接及目标均已保留".into());
+    }
+    let home = std::env::var("HOME").map_err(|_| "没有 HOME，无法使用回收站".to_owned())?;
+    let data = std::env::var_os("XDG_DATA_HOME")
+        .map(PathBuf::from)
+        .filter(|path| path.is_absolute())
+        .unwrap_or_else(|| PathBuf::from(home).join(".local/share"));
+    let files = data.join("Trash").join("files");
+    let info = data.join("Trash").join("info");
+    std::fs::create_dir_all(&files).map_err(|error| error.to_string())?;
+    std::fs::create_dir_all(&info).map_err(|error| error.to_string())?;
+    let original = source
+        .canonicalize()
+        .map_err(|error| format!("无法解析回收站路径：{error}"))?;
+    let base = original.file_name().ok_or("回收站项目没有文件名")?;
+    let mut path_text = String::new();
+    for byte in original.as_os_str().as_bytes() {
+        if byte.is_ascii_alphanumeric() || matches!(byte, b'/' | b'-' | b'_' | b'.' | b'~') {
+            path_text.push(char::from(*byte));
+        } else {
+            write!(path_text, "%{byte:02X}").expect("string write");
+        }
+    }
+    let body = format!(
+        "[Trash Info]\nPath={path_text}\nDeletionDate={}\n",
+        utc_stamp()
+    );
+    let source_c =
+        std::ffi::CString::new(original.as_os_str().as_bytes()).map_err(|e| e.to_string())?;
+    for index in 0..1000 {
+        let mut name = base.to_os_string();
+        if index > 0 {
+            name.push(format!("-{index}"));
+        }
+        let destination = files.join(&name);
+        name.push(".trashinfo");
+        let information = info.join(name);
+        // 先排他创建元数据，与其它进程及桌面回收站共同占位；不能先移动再补写。
+        let mut record = match std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&information)
+        {
+            Ok(file) => file,
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(error) => return Err(format!("无法创建回收站信息：{error}")),
+        };
+        let written = record.write_all(body.as_bytes());
+        drop(record);
+        if let Err(error) = written {
+            let _ = std::fs::remove_file(&information);
+            return Err(format!("无法写入回收站信息：{error}"));
+        }
+        let destination_c = std::ffi::CString::new(destination.as_os_str().as_bytes())
+            .map_err(|e| e.to_string())?;
+        // SAFETY: 两个绝对路径均为有效 C 字符串；NOREPLACE 还保护没有元数据的遗留条目。
+        let moved = unsafe {
+            libc::renameat2(
+                libc::AT_FDCWD,
+                source_c.as_ptr(),
+                libc::AT_FDCWD,
+                destination_c.as_ptr(),
+                libc::RENAME_NOREPLACE,
+            )
+        };
+        if moved == 0 {
+            return Ok(destination);
+        }
+        let error = std::io::Error::last_os_error();
+        let _ = std::fs::remove_file(&information);
+        if error.kind() != std::io::ErrorKind::AlreadyExists {
+            return Err(format!("无法移入回收站，原文件已保留：{error}"));
+        }
+    }
+    Err("回收站中同名项目过多，原文件已保留".into())
+}
+
+#[cfg(target_os = "windows")]
+fn windows_recycle(source: &Path) -> Result<(), String> {
+    let source = source.to_path_buf();
+    // 每次操作使用独立 STA，不依赖调用方的 COM 模式，也不阻塞宿主主线程。
+    std::thread::spawn(move || {
+        use windows::Win32::System::Com::{CoInitializeEx, CoUninitialize, CoCreateInstance, COINIT_APARTMENTTHREADED, CLSCTX_INPROC_SERVER};
+        use windows::Win32::UI::Shell::*;
+        use std::os::windows::ffi::OsStrExt;
+        if source.components().any(|part| matches!(part, std::path::Component::Prefix(prefix) if matches!(prefix.kind(), std::path::Prefix::UNC(_, _) | std::path::Prefix::VerbatimUNC(_, _)))) {
+            return Err("网络位置无法保证进入系统回收站，原文件已保留".into());
+        }
+        struct Apartment;
+        impl Drop for Apartment { fn drop(&mut self) { unsafe { CoUninitialize() } } }
+        // SAFETY: 接口和字符串在本 STA 中有效；只请求回收，失败不改用永久删除。
+        unsafe {
+            CoInitializeEx(None, COINIT_APARTMENTTHREADED).ok().map_err(|e| e.to_string())?;
+            let _apartment = Apartment;
+            let wide = source.as_os_str().encode_wide().chain(Some(0)).collect::<Vec<_>>();
+            let item: IShellItem = SHCreateItemFromParsingName(windows::core::PCWSTR(wide.as_ptr()), None).map_err(|e| e.to_string())?;
+            let operation: IFileOperation = CoCreateInstance(&FileOperation, None, CLSCTX_INPROC_SERVER).map_err(|e| e.to_string())?;
+            operation.SetOperationFlags(FOFX_RECYCLEONDELETE | FOFX_ADDUNDORECORD | FOFX_EARLYFAILURE | FOF_NOERRORUI | FOF_NOCONFIRMATION | FOF_SILENT).map_err(|e| e.to_string())?;
+            operation.DeleteItem(&item, None).map_err(|e| e.to_string())?;
+            operation.PerformOperations().map_err(|e| e.to_string())?;
+            if operation.GetAnyOperationsAborted().map_err(|e| e.to_string())?.as_bool() || source.exists() {
+                return Err("回收操作取消或未完成，未改用永久删除".into());
+            }
+            Ok(())
+        }
+    }).join().map_err(|_| "回收站操作线程异常".to_owned())?
+}
+
+#[cfg(target_os = "linux")]
+fn utc_stamp() -> String {
+    let secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_secs())
+        .unwrap_or(0);
+    let days = (secs / 86_400) as i64;
+    let tod = secs % 86_400;
+    let (year, month, day) = civil_from_days(days);
+    format!(
+        "{year:04}-{month:02}-{day:02}T{:02}:{:02}:{:02}",
+        tod / 3600,
+        (tod % 3600) / 60,
+        tod % 60
+    )
+}
+
+#[cfg(target_os = "linux")]
+fn civil_from_days(days: i64) -> (i32, u32, u32) {
+    let z = days + 719_468;
+    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
+    let doe = (z - era * 146_097) as u64;
+    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146_096) / 365;
+    let y = yoe as i64 + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = if m <= 2 { y + 1 } else { y };
+    (y as i32, m as u32, d as u32)
 }

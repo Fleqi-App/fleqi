@@ -10,12 +10,32 @@ pub fn layout_composer(app: &AppHandle, extra_height: u32) -> Result<(), String>
         .ok_or("输入条窗口不存在")?;
     let state = app.state::<Arc<crate::state::AppState>>().inner().clone();
     app.run_on_main_thread(move || {
+        #[cfg(target_os = "macos")]
         if let Ok(native) = window.ns_window() {
             // SAFETY: the window is alive; read and update its frame in the same
             // AppKit turn so queued expansion requests cannot reuse stale bounds.
             unsafe {
                 fleqi_platform::macos::windows::layout_composer(native, f64::from(extra_height))
             };
+            state
+                .composer_extra_height
+                .store(extra_height, Ordering::Relaxed);
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            let scale = window.scale_factor().unwrap_or(1.0);
+            let old_size = window.inner_size().ok();
+            let old_position = window.outer_position().ok();
+            let width = window
+                .inner_size()
+                .map(|size| size.to_logical::<f64>(scale).width)
+                .unwrap_or(760.0);
+            let height = 72.0 + f64::from(extra_height);
+            let _ = window.set_size(tauri::Size::Logical(tauri::LogicalSize::new(width, height)));
+            if let (Some(size), Some(position)) = (old_size, old_position) {
+                let top = position.y + size.height as i32 - (height * scale).round() as i32;
+                let _ = window.set_position(tauri::PhysicalPosition::new(position.x, top));
+            }
             state
                 .composer_extra_height
                 .store(extra_height, Ordering::Relaxed);
@@ -33,9 +53,27 @@ fn set_composer_frame(
     height: f64,
 ) -> Result<(), String> {
     app.run_on_main_thread(move || {
+        #[cfg(target_os = "macos")]
         if let Ok(native) = window.ns_window() {
             // SAFETY: the Tauri window is alive and AppKit is only used on its main thread.
             unsafe { fleqi_platform::macos::windows::set_frame(native, x, y, width, height) };
+        }
+        #[cfg(target_os = "windows")]
+        {
+            let _ = window.set_position(tauri::PhysicalPosition::new(
+                x.round() as i32,
+                y.round() as i32,
+            ));
+            let _ = window.set_size(tauri::PhysicalSize::new(
+                width.round() as u32,
+                height.round() as u32,
+            ));
+        }
+        #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+        {
+            let _ =
+                window.set_position(tauri::Position::Logical(tauri::LogicalPosition::new(x, y)));
+            let _ = window.set_size(tauri::Size::Logical(tauri::LogicalSize::new(width, height)));
         }
     })
     .map_err(|error| error.to_string())
@@ -121,6 +159,7 @@ fn allowed_pages(role: WindowRole) -> &'static [&'static str] {
 /// 已存在则聚焦；否则创建。`page` 在白名单内时直接落到对应页面路由。
 pub fn open_window(app: &AppHandle, role: WindowRole, page: Option<&str>) -> Result<(), String> {
     if role != WindowRole::Composer {
+        #[cfg(target_os = "macos")]
         let _ = app.set_activation_policy(tauri::ActivationPolicy::Regular);
     }
     if let Some(window) = app.get_webview_window(role.label()) {
@@ -137,7 +176,7 @@ pub fn open_window(app: &AppHandle, role: WindowRole, page: Option<&str>) -> Res
         return Err(format!("窗口 {} 不支持页面 {p}", role.label()));
     }
     let (width, height, min_width, min_height) = role.size();
-    let mut builder = WebviewWindowBuilder::new(app, role.label(), role.url(page))
+    let builder = WebviewWindowBuilder::new(app, role.label(), role.url(page))
         .title(role.title())
         .inner_size(width, height)
         .min_inner_size(min_width, min_height)
@@ -153,12 +192,12 @@ pub fn open_window(app: &AppHandle, role: WindowRole, page: Option<&str>) -> Res
             }
         });
     #[cfg(target_os = "macos")]
-    {
-        builder = builder
-            .title_bar_style(tauri::TitleBarStyle::Overlay)
-            .hidden_title(true)
-            .traffic_light_position(tauri::LogicalPosition::new(16.0, 18.0));
-    }
+    let builder = builder
+        .title_bar_style(tauri::TitleBarStyle::Overlay)
+        .hidden_title(true)
+        .traffic_light_position(tauri::LogicalPosition::new(16.0, 18.0));
+    #[cfg(windows)]
+    let builder = builder.prevent_overflow();
     let window = builder
         .build()
         .map_err(|e| format!("创建窗口 {} 失败：{e}", role.label()))?;
@@ -170,6 +209,7 @@ pub fn open_window(app: &AppHandle, role: WindowRole, page: Option<&str>) -> Res
                     .iter()
                     .any(|label| *label != role.label() && app.get_webview_window(label).is_some())
             {
+                #[cfg(target_os = "macos")]
                 let _ = app.set_activation_policy(tauri::ActivationPolicy::Accessory);
             }
         }
@@ -205,31 +245,34 @@ const COMPOSER_ATTACH_GAP: f64 = 4.0;
 /// 计算 Finder 贴附几何：与 Finder 等宽（最小 560），外侧下方贴附；
 /// 屏幕下缘放不下时贴 Finder 内侧底部（ui-design.md §4.1"内侧贴底"）。
 /// 返回 (x, y, width)；无 Finder 窗口时返回 None。
-fn composer_attach_geometry(height: f64) -> Option<(f64, f64, f64)> {
-    let frame = fleqi_platform::macos::windows::finder_frame();
+fn composer_attach_geometry(height: f64) -> Option<(f64, f64, f64, f64)> {
+    let frame = fleqi_platform::host::file_manager_frame();
     if !frame.has_window {
         return None;
     }
+    let scale = frame.scale.max(1.0);
+    let height = height * scale;
     let x1 = frame.x;
     let y2 = frame.y + frame.height;
     let width = frame
         .width
-        .max(COMPOSER_MIN_WIDTH)
-        .min((frame.screen_right - frame.screen_left - 16.0).max(COMPOSER_MIN_WIDTH));
-    let outer_y = y2 + COMPOSER_ATTACH_GAP;
-    let fits_below = outer_y + height <= frame.screen_bottom - 8.0;
+        .max(COMPOSER_MIN_WIDTH * scale)
+        .min((frame.screen_right - frame.screen_left - 16.0 * scale).max(1.0));
+    let outer_y = y2 + COMPOSER_ATTACH_GAP * scale;
+    let fits_below = outer_y + height <= frame.screen_bottom - 8.0 * scale;
     let y = if fits_below {
         outer_y
     } else {
-        y2 - COMPOSER_ATTACH_GAP - height
+        y2 - COMPOSER_ATTACH_GAP * scale - height
     };
     Some((
         x1.clamp(
-            frame.screen_left + 8.0,
-            (frame.screen_right - width - 8.0).max(frame.screen_left + 8.0),
+            frame.screen_left + 8.0 * scale,
+            (frame.screen_right - width - 8.0 * scale).max(frame.screen_left + 8.0 * scale),
         ),
-        y.max(frame.screen_top + 8.0),
+        y.max(frame.screen_top + 8.0 * scale),
         width,
+        scale,
     ))
 }
 
@@ -256,8 +299,12 @@ pub fn show_composer_attached(app: &AppHandle, focus: bool) -> Result<(), String
             .state::<Arc<crate::state::AppState>>()
             .composer_extra_height
             .load(Ordering::Relaxed);
-        if let Some((x, y, width)) = geometry {
-            let scale = window.scale_factor().map_err(|e| e.to_string())?;
+        if let Some((x, y, width, target_scale)) = geometry {
+            let scale = if cfg!(target_os = "windows") {
+                1.0
+            } else {
+                window.scale_factor().map_err(|e| e.to_string())?
+            };
             let current_size = window
                 .inner_size()
                 .map_err(|e| e.to_string())?
@@ -266,8 +313,8 @@ pub fn show_composer_attached(app: &AppHandle, focus: bool) -> Result<(), String
                 .outer_position()
                 .map_err(|e| e.to_string())?
                 .to_logical::<f64>(scale);
-            let full_height = height + f64::from(extra);
-            let top = y - f64::from(extra);
+            let full_height = (height + f64::from(extra)) * target_scale;
+            let top = y - f64::from(extra) * target_scale;
             if (current_size.width - width).abs() > 0.5
                 || (current_size.height - full_height).abs() > 0.5
                 || (current_position.x - x).abs() > 0.5
@@ -303,12 +350,17 @@ pub fn show_composer_attached(app: &AppHandle, focus: bool) -> Result<(), String
         }
     });
     builder = match geometry {
-        Some((x, y, width)) => builder.inner_size(width, height).position(x, y),
+        Some((x, y, width, scale)) => builder
+            .inner_size(width / scale, height)
+            .position(x / scale, y / scale),
         None => builder.inner_size(760.0, height).center(),
     };
-    builder
+    let window = builder
         .build()
         .map_err(|e| format!("创建输入条窗口失败：{e}"))?;
+    if let Some((x, y, width, scale)) = geometry {
+        set_composer_frame(app, window, x, y, width, height * scale)?;
+    }
     apply_window_material(app, "composer");
     Ok(())
 }
@@ -327,10 +379,7 @@ pub fn hide_composer(app: &AppHandle) {
 }
 
 pub fn finder_interaction_active(app: &AppHandle) -> bool {
-    interaction_active(
-        app,
-        fleqi_platform::macos::windows::finder_frame().foreground,
-    )
+    interaction_active(app, fleqi_platform::host::file_manager_frame().foreground)
 }
 
 fn interaction_active(app: &AppHandle, foreground: i32) -> bool {
@@ -355,8 +404,10 @@ pub fn apply_window_material(app: &AppHandle, label: &str) {
     };
     let state = app.state::<Arc<crate::state::AppState>>();
     let settings = state.settings.snapshot().settings;
+    #[cfg(target_os = "macos")]
     let composer = label == "composer";
     let _ = app.run_on_main_thread(move || {
+        #[cfg(target_os = "macos")]
         if let Ok(native) = window.ns_window() {
             let theme = match settings.theme {
                 fleqi_domain::settings::Theme::Light => 1,
@@ -372,11 +423,20 @@ pub fn apply_window_material(app: &AppHandle, label: &str) {
                     theme,
                 );
             }
-            let kind = fleqi_platform::macos::windows::material_kind(settings.transparency);
-            let _ = window.eval(format!(
-                "document.documentElement.dataset.material = '{kind}';"
-            ));
         }
+        #[cfg(windows)]
+        {
+            let theme = match settings.theme {
+                fleqi_domain::settings::Theme::Light => Some(tauri::Theme::Light),
+                fleqi_domain::settings::Theme::Dark => Some(tauri::Theme::Dark),
+                fleqi_domain::settings::Theme::System => None,
+            };
+            let _ = window.set_theme(theme);
+        }
+        let kind = fleqi_platform::host::material_kind(settings.transparency);
+        let _ = window.eval(format!(
+            "document.documentElement.dataset.material = '{kind}';"
+        ));
     });
 }
 
@@ -393,8 +453,8 @@ fn present_window(
     let app_after_present = app.clone();
     // Finder dragging/focus loss is temporary: hide immediately so an old bar
     // cannot fade over a moving window. Explicit user hiding keeps its fade.
-    let immediate_hide = !visible && !return_to_finder;
-    let reduce = immediate_hide
+    #[cfg(target_os = "macos")]
+    let reduce = (!visible && !return_to_finder)
         || app
             .state::<Arc<crate::state::AppState>>()
             .settings
@@ -402,7 +462,10 @@ fn present_window(
             .settings
             .motion_mode
             == fleqi_domain::settings::MotionMode::Reduce;
+    #[cfg(not(target_os = "macos"))]
+    let _ = return_to_finder;
     let _ = app.run_on_main_thread(move || {
+        #[cfg(target_os = "macos")]
         if let Ok(native) = window.ns_window() {
             // SAFETY: live Tauri-owned NSWindow, used only on the main thread.
             unsafe {
@@ -414,12 +477,35 @@ fn present_window(
                     reduce,
                 );
             }
-            if focus {
-                app_after_present
-                    .state::<Arc<crate::state::AppState>>()
-                    .composer_focus_requested
-                    .store(false, Ordering::Release);
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            if visible {
+                #[cfg(windows)]
+                if !focus {
+                    if let Ok(native) = window.hwnd() {
+                        // SAFETY: Tauri 的窗口仍存活，且此闭包在宿主主线程执行。
+                        unsafe {
+                            fleqi_platform::windows::surface::show_without_activation(native.0)
+                        };
+                    }
+                } else {
+                    let _ = window.show();
+                }
+                #[cfg(not(windows))]
+                let _ = window.show();
+                if focus {
+                    let _ = window.set_focus();
+                }
+            } else {
+                let _ = window.hide();
             }
+        }
+        if focus {
+            app_after_present
+                .state::<Arc<crate::state::AppState>>()
+                .composer_focus_requested
+                .store(false, Ordering::Release);
         }
     });
 }
@@ -443,7 +529,7 @@ enum FollowAction {
 impl FinderGeometryWatch {
     fn sample(
         &mut self,
-        frame: fleqi_platform::macos::windows::FinderFrame,
+        frame: fleqi_platform::frame::HostFrame,
         active: bool,
         visibility: fleqi_domain::surface::Visibility,
     ) -> FollowAction {
@@ -489,7 +575,7 @@ impl FinderGeometryWatch {
     }
 
     pub fn tick(&mut self, app: &AppHandle, state: &crate::state::AppState) {
-        let frame = fleqi_platform::macos::windows::finder_frame();
+        let frame = fleqi_platform::host::file_manager_frame();
         #[cfg(feature = "desktop-test")]
         if std::env::var_os("FLEQI_DEBUG_FINDER").is_some() {
             static TRACE: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
@@ -518,7 +604,11 @@ impl FinderGeometryWatch {
             // Reevaluate after focus settles even if the context itself did not change.
             state.surface.on_context_changed(&snapshot);
         }
-        if !frame.has_window && !state.composer_attached.load(Ordering::Acquire) && active {
+        if preserve_detached_composer(
+            state.composer_attached.load(Ordering::Acquire),
+            frame.has_window,
+            state.surface.visibility(),
+        ) {
             return; // Explicit manual entry may be detached and show a directory/permission guide.
         }
         match self.sample(frame, active, state.surface.visibility()) {
@@ -529,11 +619,27 @@ impl FinderGeometryWatch {
     }
 }
 
+fn preserve_detached_composer(
+    attached: bool,
+    has_window: bool,
+    visibility: fleqi_domain::surface::Visibility,
+) -> bool {
+    !attached && !has_window && visibility == fleqi_domain::surface::Visibility::Visible
+}
+
 #[cfg(test)]
 mod follow_tests {
     use super::*;
     use fleqi_domain::surface::Visibility::*;
-    use fleqi_platform::macos::windows::FinderFrame;
+    use fleqi_platform::frame::HostFrame as FinderFrame;
+
+    #[test]
+    fn manual_composer_survives_clearing_its_focus_request_without_explorer() {
+        assert!(preserve_detached_composer(false, false, Visible));
+        assert!(!preserve_detached_composer(true, false, Visible));
+        assert!(!preserve_detached_composer(false, true, Visible));
+        assert!(!preserve_detached_composer(false, false, UserHidden));
+    }
 
     #[test]
     fn movement_hides_immediately_and_restores_after_release_without_stealing_other_apps() {

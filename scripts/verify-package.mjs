@@ -10,6 +10,11 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fail, ok, repoRoot } from "./lib/contract.mjs";
 
+if (process.platform === "win32") {
+  await import("./verify-package-windows.mjs");
+  process.exit(0);
+}
+
 const APP = path.join(repoRoot, "target", "release", "bundle", "macos", "Fleqi.app");
 const PLIST = path.join(APP, "Contents", "Info.plist");
 const BINARY = path.join(APP, "Contents", "MacOS", "fleqi-desktop");

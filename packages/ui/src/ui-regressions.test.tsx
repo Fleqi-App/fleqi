@@ -14,6 +14,33 @@ async function composer() {
 }
 
 describe("UI 宿主链路回归", () => {
+  it.each(["ready", "unknown"] as const)("Bash 终端按集成状态显示自动同步提示（%s）", async (readiness) => {
+    const user = userEvent.setup();
+    const { adapter } = await composer();
+    const snapshot = adapter.terminalSnapshot.bind(adapter);
+    adapter.terminalSnapshot = async (id) => ({ ...await snapshot(id), shell: "/bin/bash", shellReadiness: readiness });
+    render(<App adapter={adapter} />);
+    await waitFor(() => expect(screen.getByTestId("composer").dataset.surface).toBe("visible"));
+    await user.click(screen.getByRole("button", { name: "打开终端面板" }));
+    await waitFor(() => expect(screen.getByTestId("terminal-readiness").textContent).toBe(readiness === "ready" ? "可输入" : "状态未知"));
+    expect(screen.queryByText(/Bash 自动目录同步尚未就绪或不可用/) !== null).toBe(readiness === "unknown");
+  });
+
+  it.each([true, false])("Windows 概览使用实际 Explorer 能力状态（可用=%s）", async (available) => {
+    const adapter = createPreviewAdapter({ delayMs: 0 });
+    const boot = await adapter.bootstrap();
+    adapter.bootstrap = async () => ({
+      ...boot,
+      buildInfo: { ...boot.buildInfo, targetOs: "windows" },
+      permissions: { ...boot.permissions, records: boot.permissions.records.map((record) => ({ ...record, status: "failed" as const })) },
+      platform: { ...boot.platform, items: boot.platform.items.map((item) => item.id === "finderContext" ? { ...item, state: available ? "supported" as const : "temporarilyUnavailable" as const } : item) },
+    });
+    window.location.hash = "#/console/overview";
+    render(<App adapter={adapter} />);
+    expect(await screen.findByRole("button", { name: `资源管理器 读取：${available ? "可用" : "暂不可用"}` })).toBeDefined();
+    expect(screen.queryByRole("button", { name: "资源管理器 权限：待检查" })).toBeNull();
+  });
+
   it("页面挂载只读 surface；选择另一个会话后命令发送到新会话", async () => {
     const user = userEvent.setup();
     const { adapter, sessionId } = await composer();

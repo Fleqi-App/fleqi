@@ -150,6 +150,7 @@ fn native_result(
         .map(|p| registry.register(p, PathKind::File).id)
         .collect();
     let step = ExecutionStep {
+        script_runtime: None,
         kind: StepKind::Native,
         operation: operation.into(),
         executable_ref: None,

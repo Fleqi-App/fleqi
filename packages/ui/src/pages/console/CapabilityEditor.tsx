@@ -8,9 +8,11 @@ import { Card } from "../../components/Card";
 import { InlineStatus } from "../../components/InlineStatus";
 import { isAppError, newRequestId, type CatalogEntry } from "../../adapters/host";
 import { useHost } from "../../store/host";
+import { fileManagerLabel } from "../../platform-copy";
 
 export function CapabilityEditor({ entry, onClose }: { entry: CatalogEntry; onClose: () => void }) {
   const host = useHost();
+  const manager = fileManagerLabel(host.bootstrap?.buildInfo.targetOs);
   const [form, setForm] = useState<CapabilityForm | null>(null);
   const [parameters, setParameters] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
@@ -55,11 +57,11 @@ export function CapabilityEditor({ entry, onClose }: { entry: CatalogEntry; onCl
         <p className="break-all">目录：{form.context.directoryRef?.displayPath ?? "未选择工作文件夹"}</p>
         <p className="mt-1 text-xs text-muted-foreground">本次将处理以下文件。执行前请核对文件名。</p>
         {form.context.selectedItems.length > 0 && <ul className="mt-2 max-h-36 overflow-auto text-xs">{form.context.selectedItems.map((item) => <li className="break-all py-1" key={item.id}>{item.displayPath}</li>)}</ul>}
-        {selectionChanged && <p role="status" className="mt-2 text-warning">Finder 选区已变化，请重新读取并核对后提交。</p>}
-        {!enoughInputs && <p className="mt-2 text-warning">请在 Finder 至少选择 {form.minimumInputs} 项，然后重新读取。</p>}
+        {selectionChanged && <p role="status" className="mt-2 text-warning">{manager} 选区已变化，请重新读取并核对后提交。</p>}
+        {!enoughInputs && <p className="mt-2 text-warning">请在 {manager} 至少选择 {form.minimumInputs} 项，然后重新读取。</p>}
         <Button type="button" className="mt-2" disabled={busy} onClick={() => {
           void host.adapter.contextRefresh().then(() => setRefresh((value) => value + 1), (reason: unknown) => setError(isAppError(reason) ? reason.message : String(reason)));
-        }}>重新读取 Finder 选区</Button>
+        }}>重新读取 {manager} 选区</Button>
       </div>
       {form.fields.map((field) => <label key={field.key} className="block space-y-1.5 text-sm">
         <span>{field.label}{field.required && <span className="ml-1 text-muted-foreground">*</span>}</span>

@@ -93,6 +93,7 @@ struct FakeHandle {
     readiness: Arc<Mutex<ShellReadiness>>,
     snapshot_cwd: Arc<Mutex<String>>,
     shutdown: Arc<Mutex<bool>>,
+    cancelled_cd: Arc<AtomicU64>,
 }
 
 impl TerminalHandle for FakeHandle {
@@ -109,6 +110,9 @@ impl TerminalHandle for FakeHandle {
             .unwrap()
             .push(format!("__cd__{}@{}\r", target.display(), revision).into_bytes());
         Ok(())
+    }
+    fn cancel_cd(&self) {
+        self.cancelled_cd.fetch_add(1, Ordering::SeqCst);
     }
     fn resize(&self, _c: u16, _r: u16) -> Result<(), String> {
         Ok(())
@@ -162,6 +166,7 @@ struct FakeTerminalPort {
     shutdown: Arc<Mutex<bool>>,
     events_tx: Arc<Mutex<Vec<Sender<TerminalEvent>>>>,
     spawn_count: Arc<AtomicU64>,
+    cancelled_cd: Arc<AtomicU64>,
 }
 
 impl TerminalPort for FakeTerminalPort {
@@ -182,6 +187,7 @@ impl TerminalPort for FakeTerminalPort {
             readiness: Arc::clone(&self.readiness),
             snapshot_cwd: Arc::clone(&self.cwd),
             shutdown: Arc::clone(&self.shutdown),
+            cancelled_cd: Arc::clone(&self.cancelled_cd),
         }))
     }
 }
@@ -194,10 +200,10 @@ impl FakeTerminalPort {
     }
 }
 
-struct FixedContext(RawContext);
+struct FixedContext(Arc<Mutex<RawContext>>);
 impl ContextPort for FixedContext {
     fn capture(&self) -> RawContext {
-        self.0.clone()
+        self.0.lock().unwrap().clone()
     }
     fn pick_directory(&self) -> DirectoryPick {
         DirectoryPick::Cancelled
@@ -218,6 +224,7 @@ struct Rig {
     terminal: Arc<TerminalService>,
     surface: Arc<SurfaceService>,
     context: Arc<ContextService>,
+    context_raw: Arc<Mutex<RawContext>>,
     port: FakeTerminalPort,
     paths: Arc<PathRegistry>,
     events: Arc<Events>,
@@ -246,6 +253,7 @@ fn rig(settings: &Settings, directory: &Path) -> Rig {
         shutdown: Arc::new(Mutex::new(false)),
         events_tx: Arc::new(Mutex::new(Vec::new())),
         spawn_count: Arc::new(AtomicU64::new(0)),
+        cancelled_cd: Arc::new(AtomicU64::new(0)),
     };
     let registry = Arc::new(PathRegistry::new());
     let terminal = TerminalService::new(
@@ -265,8 +273,9 @@ fn rig(settings: &Settings, directory: &Path) -> Rig {
         view_kind: Some(fleqi_domain::context::ViewKind::Physical),
         ..RawContext::default()
     };
+    let context_raw = Arc::new(Mutex::new(raw));
     let context = Arc::new(ContextService::new(
-        Arc::new(FixedContext(raw)),
+        Arc::new(FixedContext(context_raw.clone())),
         Arc::new(FakeClock),
         events.clone(),
         Arc::clone(&registry),
@@ -287,6 +296,7 @@ fn rig(settings: &Settings, directory: &Path) -> Rig {
         terminal,
         surface,
         context,
+        context_raw,
         port,
         paths: registry,
         events: Arc::new(Events::default()),
@@ -505,6 +515,24 @@ fn finder_drag_temporarily_hides_pauses_delivery_and_restores() {
         Some("echo during-drag".into()),
         "恢复重同步应把暂隐期排队命令转为草稿"
     );
+
+    // 暂隐期间目录消失，恢复仍允许已有终端输入，不能永远停留在暂停状态。
+    rig.surface.system_hide();
+    *rig.context_raw.lock().unwrap() = RawContext::default();
+    assert!(rig.context.refresh().directory_ref.is_none());
+    rig.surface.system_restore();
+    let outcome = rig
+        .terminal
+        .submit_line(
+            "r-no-context",
+            &session_id,
+            "echo restored",
+            Revision::new(2),
+            &base.path().to_string_lossy(),
+            None,
+        )
+        .unwrap();
+    assert!(matches!(outcome, SubmitOutcome::Sent));
 }
 
 #[test]
@@ -623,6 +651,103 @@ fn cd_confirm_delivers_queued_line_once() {
 }
 
 #[test]
+fn superseded_private_cd_does_not_send_an_old_queued_command_or_fake_synced_state() {
+    use fleqi_domain::directory_sync::DirectorySync;
+    let base = tempfile::tempdir().unwrap();
+    let rig = rig(
+        &Settings {
+            activation: Activation::FollowFinder,
+            ..Settings::default()
+        },
+        base.path(),
+    );
+    rig.refresh();
+    let session_id = rig.surface.visible_session().unwrap().id;
+    rig.terminal.open(&session_id, None, 80, 24).unwrap();
+    rig.terminal
+        .target_changed(
+            &session_id,
+            &base.path().join("."),
+            "same directory",
+            Revision::new(0),
+        )
+        .unwrap();
+    assert!(written_texts(&rig.port).is_empty());
+    let b = base.path().join("B");
+    let c = base.path().join("C");
+    std::fs::create_dir(&b).unwrap();
+    std::fs::create_dir(&c).unwrap();
+    rig.terminal
+        .target_changed(&session_id, &b, "B", Revision::new(1))
+        .unwrap();
+    rig.terminal
+        .submit_line(
+            "old-command",
+            &session_id,
+            "must-not-run",
+            Revision::new(1),
+            "B",
+            Some(b),
+        )
+        .unwrap();
+    rig.terminal
+        .target_changed(&session_id, &c, "C", Revision::new(2))
+        .unwrap();
+    assert_eq!(rig.port.cancelled_cd.load(Ordering::SeqCst), 1);
+    *rig.port.readiness.lock().unwrap() = ShellReadiness {
+        prompt_ready: false,
+        ..safe()
+    };
+    rig.port.emit(TerminalEvent::CdCancelled {
+        revision: Revision::new(1),
+    });
+    rig.port.emit(TerminalEvent::PromptReady {
+        cwd: base.path().to_string_lossy().into_owned(),
+    });
+    std::thread::sleep(std::time::Duration::from_millis(50));
+    assert_eq!(
+        rig.sessions.get(&session_id).unwrap().directory_sync,
+        DirectorySync::Pending
+    );
+    assert_eq!(
+        written_texts(&rig.port)
+            .iter()
+            .filter(|line| line.starts_with("__cd__"))
+            .count(),
+        1
+    );
+    *rig.port.readiness.lock().unwrap() = safe();
+    rig.port.emit(TerminalEvent::PromptReady {
+        cwd: base.path().to_string_lossy().into_owned(),
+    });
+    std::thread::sleep(std::time::Duration::from_millis(50));
+    assert_eq!(
+        rig.sessions.get(&session_id).unwrap().directory_sync,
+        DirectorySync::Syncing
+    );
+    rig.port.emit(TerminalEvent::CdResult {
+        revision: Revision::new(2),
+        ok: true,
+        cwd: c.to_string_lossy().into_owned(),
+        message: None,
+    });
+    std::thread::sleep(std::time::Duration::from_millis(50));
+    assert_eq!(
+        rig.sessions.get(&session_id).unwrap().directory_sync,
+        DirectorySync::Synced
+    );
+    assert!(
+        !written_texts(&rig.port)
+            .iter()
+            .any(|line| line == "must-not-run\r")
+    );
+    assert_eq!(
+        rig.terminal.take_withdrawn(&session_id).unwrap().text,
+        "must-not-run"
+    );
+}
+
+#[test]
 fn input_requires_lease_and_background_cancels_pending() {
     let settings = Settings::default();
     let dir = tempfile::tempdir().unwrap();
@@ -692,6 +817,78 @@ fn input_requires_lease_and_background_cancels_pending() {
         Some("queued-then-background".into())
     );
     assert!(rig.terminal.take_withdrawn(&session_id).is_none());
+}
+
+#[test]
+fn input_during_cd_withdraws_waiting_command_even_when_queued_after_input() {
+    for input_first in [false, true] {
+        let root = tempfile::tempdir().unwrap();
+        let rig = rig(
+            &Settings {
+                activation: Activation::FollowFinder,
+                ..Settings::default()
+            },
+            root.path(),
+        );
+        rig.refresh();
+        let session_id = rig.surface.visible_session().unwrap().id;
+        rig.terminal.open(&session_id, None, 80, 24).unwrap();
+        let lease = rig.terminal.acquire_lease(&session_id, "composer").unwrap();
+        let target = root.path().join("target");
+        std::fs::create_dir(&target).unwrap();
+        rig.terminal
+            .target_changed(&session_id, &target, "target", Revision::new(1))
+            .unwrap();
+        if input_first {
+            rig.terminal
+                .input(&session_id, Some(&lease), b"user draft")
+                .unwrap();
+        }
+        rig.terminal
+            .submit_line(
+                "queued",
+                &session_id,
+                "must-not-run",
+                Revision::new(1),
+                "target",
+                Some(target.clone()),
+            )
+            .unwrap();
+        if !input_first {
+            rig.terminal
+                .input(&session_id, Some(&lease), b"user draft")
+                .unwrap();
+        }
+        rig.port.emit(TerminalEvent::CdResult {
+            revision: Revision::new(1),
+            ok: true,
+            cwd: target.to_string_lossy().into_owned(),
+            message: None,
+        });
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+        while rig.sessions.get(&session_id).unwrap().directory_sync
+            != fleqi_domain::directory_sync::DirectorySync::Synced
+        {
+            assert!(std::time::Instant::now() < deadline);
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        assert_eq!(
+            rig.terminal.take_withdrawn(&session_id).unwrap().text,
+            "must-not-run"
+        );
+        assert_eq!(
+            written_texts(&rig.port)
+                .iter()
+                .filter(|line| *line == "user draft")
+                .count(),
+            1
+        );
+        assert!(
+            !written_texts(&rig.port)
+                .iter()
+                .any(|line| line == "must-not-run\r")
+        );
+    }
 }
 
 #[test]

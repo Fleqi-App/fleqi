@@ -80,7 +80,7 @@ pub fn derive_capabilities(
             recovery: if credentials.available {
                 None
             } else {
-                Some("检查 Keychain 可用性后重新自检".into())
+                Some("检查系统凭据服务后重新自检".into())
             },
         },
     ];

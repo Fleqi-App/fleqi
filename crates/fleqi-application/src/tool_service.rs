@@ -72,6 +72,9 @@ impl ToolService {
 
     /// First launch and explicit retry share the same bounded, cancellable queue.
     pub fn prepare(self: &Arc<Self>) -> ToolPreparation {
+        if !self.facility.supports_install() {
+            return self.preparation();
+        }
         let manifests = fleqi_domain::tools::builtin_tool_manifests();
         {
             let mut state = self.preparation.lock().expect("tool preparation");
@@ -251,6 +254,11 @@ impl ToolService {
         cancel: &AtomicBool,
         progress: &dyn Fn(InstallProgress),
     ) -> AppResult<ToolEntry> {
+        if !self.facility.supports_install() {
+            return Err(AppError::unavailable(
+                "当前平台暂不提供工具自动安装，请安装工具后重新检测",
+            ));
+        }
         let _guard = self.installation.lock().expect("tool installation");
         if cancel.load(Ordering::Acquire) {
             return Err(AppError::unavailable("已取消"));

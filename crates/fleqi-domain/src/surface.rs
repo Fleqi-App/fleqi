@@ -242,6 +242,10 @@ impl SurfaceMachine {
             } => {
                 let previous = std::mem::replace(&mut self.settings, settings);
                 self.hotkey_registered = self.hotkey_registered && self.settings.hotkey.is_some();
+                let activation_changed = previous.activation != self.settings.activation;
+                if activation_changed {
+                    self.auto_show_suppressed = false;
+                }
                 if previous.bar_enabled && !self.settings.bar_enabled {
                     // 用户显式关闭操作栏：按当前隐藏策略处理一次。
                     let behavior = self.settings.hide_behavior;
@@ -258,8 +262,7 @@ impl SurfaceMachine {
                         SurfaceOutcome::NoChange
                     };
                 }
-                if previous.activation != self.settings.activation {
-                    self.auto_show_suppressed = false;
+                if activation_changed {
                     if self.visibility == Visibility::Visible {
                         return SurfaceOutcome::NoChange;
                     }

@@ -9,10 +9,7 @@ use objc2_foundation::NSString;
 use std::path::PathBuf;
 use std::sync::mpsc::channel;
 
-/// 把闭包投递到 AppKit 主线程执行。
-pub trait MainThreadExecutor: Send + Sync {
-    fn run(&self, job: Box<dyn FnOnce() + Send>);
-}
+pub use crate::scheduling::MainThreadExecutor;
 
 /// 在主线程运行模态面板并等待结果。
 pub fn pick_directory_blocking(main: &dyn MainThreadExecutor) -> DirectoryPick {

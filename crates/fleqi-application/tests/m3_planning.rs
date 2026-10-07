@@ -393,6 +393,16 @@ fn valid_plan_executes_run_under_policy() {
     };
     assert_eq!(run.session_id, "session-1");
     assert_eq!(run.context_id, "ctx-9");
+    if cfg!(windows) {
+        assert_eq!(
+            run.state,
+            fleqi_domain::execution::RunState::AwaitingApproval
+        );
+        fixture
+            .runs
+            .approve("approve-windows-plan", &run.id, run.plan_revision)
+            .unwrap();
+    }
     // 只读 + previewComplete：readOnly 策略自动执行，最终成功。
     let final_run = fixture
         .runs

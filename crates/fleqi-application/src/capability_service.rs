@@ -86,6 +86,7 @@ pub fn extended_descriptors() -> Vec<CapabilityDescriptor> {
 }
 
 pub fn form(capability_id: &str, context: ContextSnapshot) -> AppResult<CapabilityForm> {
+    ensure_platform_available(capability_id)?;
     if let Some(spec) = extended_descriptors()
         .into_iter()
         .find(|spec| spec.id == capability_id)
@@ -721,6 +722,43 @@ pub fn form(capability_id: &str, context: ContextSnapshot) -> AppResult<Capabili
     })
 }
 
+/// Windows 首轮验收清单。所有入口共用此判定，不能靠隐藏按钮限制执行。
+pub fn platform_available(id: &str) -> bool {
+    !cfg!(windows)
+        || matches!(
+            id,
+            "CAP-FILE-001"
+                | "CAP-FILE-002"
+                | "CAP-FILE-003"
+                | "CAP-FILE-004"
+                | "CAP-FILE-005"
+                | "CAP-FILE-006"
+                | "CAP-FILE-007"
+                | "CAP-FILE-008"
+                | "CAP-FILE-012"
+                | "CAP-ZIP-001"
+                | "CAP-ZIP-002"
+                | "CAP-ZIP-003"
+                | "CAP-IMAGE-001"
+                | "CAP-IMAGE-002"
+                | "CAP-IMAGE-003"
+                | "CAP-IMAGE-004"
+                | "CAP-PDF-001"
+                | "CAP-PDF-002"
+                | "CAP-PDF-003"
+                | "CAP-PDF-004"
+                | "CAP-PDF-005"
+        )
+}
+
+pub fn ensure_platform_available(id: &str) -> AppResult<()> {
+    if platform_available(id) {
+        Ok(())
+    } else {
+        Err(AppError::unavailable(format!("{id} 暂未在 Windows 开放")))
+    }
+}
+
 pub fn supports_conversion_cleanup(id: &str) -> bool {
     matches!(id, "CAP-IMAGE-001" | "CAP-MEDIA-001" | "CAP-MEDIA-002")
 }
@@ -831,6 +869,7 @@ pub fn plan(
     let steps = groups
         .into_iter()
         .map(|input_refs| ExecutionStep {
+            script_runtime: None,
             kind: StepKind::Native,
             operation: form.capability_id.clone(),
             executable_ref: None,

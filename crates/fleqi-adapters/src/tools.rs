@@ -118,6 +118,9 @@ impl ToolManager {
 }
 
 impl ToolFacility for ToolManager {
+    fn supports_install(&self) -> bool {
+        !cfg!(windows)
+    }
     fn detect(&self, manifest: &ToolManifest) -> ToolStatus {
         let executable = match &manifest.source {
             ToolSource::System => match lookup_on_path(&manifest.executable) {
@@ -253,13 +256,25 @@ impl ToolFacility for ToolManager {
 
 /// PATH 查找（不含当前目录）。
 pub(crate) fn lookup_on_path(name: &str) -> Option<PathBuf> {
-    if name.contains('/') {
+    if name.contains(['/', '\\', ':']) {
         return None;
     }
     let path = std::env::var_os("PATH").unwrap_or_default();
+    let mut names = vec![name.to_owned()];
+    if cfg!(windows) && Path::new(name).extension().is_none() {
+        names.extend(
+            std::env::var("PATHEXT")
+                .unwrap_or_else(|_| ".COM;.EXE;.BAT;.CMD".into())
+                .split(';')
+                .filter(|extension| {
+                    extension.starts_with('.') && !extension.contains(['/', '\\', ':'])
+                })
+                .map(|extension| format!("{name}{extension}")),
+        );
+    }
     crate::environment::executable_paths(&path)
         .into_iter()
-        .map(|dir| dir.join(name))
+        .flat_map(|dir| names.iter().map(move |name| dir.join(name)))
         .find(|candidate| candidate.is_file())
 }
 

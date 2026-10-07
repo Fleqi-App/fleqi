@@ -41,6 +41,10 @@ impl NativeSteps {
     }
 }
 fn name(value: &str) -> Result<&str, String> {
+    #[cfg(windows)]
+    if !crate::capabilities::valid_windows_filename(value) {
+        return Err("文件名包含 Windows 不支持的字符、设备名或结尾".into());
+    }
     if value.is_empty() || value == "." || value == ".." || value.contains(['/', '\\', '\0']) {
         Err("文件名不能为空或包含路径分隔符".into())
     } else {
@@ -102,6 +106,8 @@ impl NativeStepPort for NativeSteps {
         cwd: &Path,
         cancel: &AtomicBool,
     ) -> Result<fleqi_application::run_service::NativeOutput, String> {
+        fleqi_application::capability_service::ensure_platform_available(&step.operation)
+            .map_err(|error| error.message)?;
         if fleqi_application::capability_service::writes_output_files(&step.operation) {
             let mut parameters: BTreeMap<String, String> =
                 serde_json::from_str(step.args.first().ok_or("缺少参数")?)

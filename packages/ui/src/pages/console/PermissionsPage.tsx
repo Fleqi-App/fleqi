@@ -7,6 +7,7 @@ import { Card, DescriptionList } from "../../components/Card";
 import { EmptyState, InlineStatus, type StatusTone } from "../../components/InlineStatus";
 import { useHost } from "../../store/host";
 import { isAppError } from "../../adapters/host";
+import { fileManagerLabel } from "../../platform-copy";
 
 const PERMISSION_LABEL: Record<Permission, { title: string; purpose: string }> = {
   finderAutomation: { title: "Finder 自动化", purpose: "读取当前 Finder 文件夹与选中项（Apple Events → Finder）" },
@@ -79,16 +80,16 @@ function PermissionRow({ record, busy, onRequest, onOpenSettings, onRecheck }: {
   );
 }
 
-function availabilityText(context: ContextSnapshot): { text: string; tone: StatusTone } {
+function availabilityText(context: ContextSnapshot, manager: string): { text: string; tone: StatusTone } {
   switch (context.availability.kind) {
     case "available":
       return { text: "有效目录", tone: "success" };
     case "noDirectory":
       return { text: `没有有效目录：${context.availability.reason}`, tone: "warning" };
     case "permissionRequired":
-      return { text: "需要 Finder 自动化权限", tone: "warning" };
+      return { text: `需要 ${manager} 权限`, tone: "warning" };
     case "finderNotRunning":
-      return { text: "Finder 未运行", tone: "warning" };
+      return { text: `${manager} 未运行`, tone: "warning" };
     case "selectionOverLimit":
       return { text: `选中 ${context.availability.count} 项，超过 ${context.availability.limit} 项上限，请缩小选区`, tone: "warning" };
     case "failed":
@@ -100,6 +101,7 @@ const VIEW_KIND_TEXT = { physical: "真实文件夹", virtual: "虚拟视图（�
 
 export function ContextSection() {
   const host = useHost();
+  const manager = fileManagerLabel(host.bootstrap?.buildInfo.targetOs);
   const context = host.bootstrap?.context ?? null;
   const [busy, setBusy] = useState<"refresh" | "pick" | null>(null);
   const [notice, setNotice] = useState<{ tone: StatusTone; text: string } | null>(null);
@@ -125,11 +127,11 @@ export function ContextSection() {
 
   return (
     <Card
-      title="Finder 上下文"
+      title={`${manager} 上下文`}
       description="当前用于任务的目录与选区快照；虚拟视图不猜测目录，超限不截取。"
       actions={
         <>
-          <Button disabled={busy !== null} onClick={() => run("refresh")} aria-label="刷新 Finder 上下文">
+          <Button disabled={busy !== null} onClick={() => run("refresh")} aria-label={`刷新 ${manager} 上下文`}>
             <RefreshCw aria-hidden="true" className="size-4" />
             刷新
           </Button>
@@ -142,7 +144,7 @@ export function ContextSection() {
     >
       {busy && (
         <InlineStatus tone="loading" className="mb-3">
-          {busy === "refresh" ? "正在读取 Finder…" : "等待选择文件夹…"}
+          {busy === "refresh" ? `正在读取 ${manager}…` : "等待选择文件夹…"}
         </InlineStatus>
       )}
       {notice && (
@@ -151,15 +153,15 @@ export function ContextSection() {
         </InlineStatus>
       )}
       {!context ? (
-        <EmptyState title="尚未读取 Finder 上下文" description="刷新会无提示核对权限后读取当前窗口；没有权限时可选择文件夹。" />
+        <EmptyState title={`尚未读取 ${manager} 上下文`} description="刷新会无提示核对权限后读取当前窗口；没有权限时可选择文件夹。" />
       ) : (
         <div data-testid="context-snapshot" data-context-id={context.id} data-availability={context.availability.kind}>
-          <InlineStatus tone={availabilityText(context).tone} className="mb-3">
-            {availabilityText(context).text}
+          <InlineStatus tone={availabilityText(context, manager).tone} className="mb-3">
+            {availabilityText(context, manager).text}
           </InlineStatus>
           <DescriptionList
             items={[
-              { label: "来源", value: context.source === "finder" ? "Finder" : "文件夹选择", field: "context-source" },
+              { label: "来源", value: context.source === "finder" ? manager : "文件夹选择", field: "context-source" },
               { label: "视图", value: VIEW_KIND_TEXT[context.viewKind] },
               { label: "目录", value: context.directoryRef?.displayPath ?? "—", mono: true, field: "context-directory" },
               {
@@ -191,7 +193,8 @@ export function PermissionsPage() {
   const host = useHost();
   const [busy, setBusy] = useState<Permission | "all" | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const records = host.bootstrap?.permissions.records ?? [];
+  const windows = host.bootstrap?.buildInfo.targetOs === "windows";
+  const records = windows ? [] : host.bootstrap?.permissions.records ?? [];
 
   const guard = async (key: Permission | "all", work: () => Promise<unknown>) => {
     setBusy(key);
@@ -222,6 +225,7 @@ export function PermissionsPage() {
           {notice}
         </InlineStatus>
       )}
+      {windows && host.bootstrap?.platform.items.map((item) => <Card key={item.id} title={({ finderContext: "资源管理器读取", accessibilityGeometry: "窗口跟随", directoryPicker: "文件夹选择", credentialStore: "Windows 凭据管理器" } as Record<string, string>)[item.id] ?? item.id} description={item.reason ?? "原生服务可用"}><InlineStatus tone={item.state === "supported" ? "success" : "neutral"}>{item.state === "supported" ? "可用" : "暂不可用"}</InlineStatus>{item.recovery && <p className="mt-2 text-xs text-muted-foreground">{item.recovery}</p>}</Card>)}
       {records.map((record) => (
         <PermissionRow
           key={record.permission}
@@ -235,7 +239,7 @@ export function PermissionsPage() {
       <ContextSection />
       <p className="text-xs text-muted-foreground">
         <Settings2 aria-hidden="true" className="mr-1 inline size-3.5" />
-        无需 Finder 权限的本地管理与历史查看保持可用；权限被撤销时相关能力会标注影响并提供手动选择目录。
+        {windows ? "资源管理器读取失败时可以手动选择目录；本地管理与历史查看保持可用。" : "无需 Finder 权限的本地管理与历史查看保持可用；权限被撤销时相关能力会标注影响并提供手动选择目录。"}
       </p>
     </div>
   );

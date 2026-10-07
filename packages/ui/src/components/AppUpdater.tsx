@@ -12,11 +12,13 @@ const LABELS = {
 } as const;
 
 export function AppUpdater() {
-  const { adapter } = useHost();
+  const { adapter, bootstrap } = useHost();
+  const windows = bootstrap?.buildInfo.targetOs === "windows";
   const [status, setStatus] = useState<AppUpdateStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   useEffect(() => {
+    if (windows) return;
     let disposed = false;
     let timer: ReturnType<typeof setTimeout>;
     const refresh = async () => {
@@ -26,7 +28,7 @@ export function AppUpdater() {
     };
     void refresh();
     return () => { disposed = true; clearTimeout(timer); };
-  }, [adapter]);
+  }, [adapter, windows]);
   const act = async (install: boolean) => {
     setPending(true); setError(null);
     try {
@@ -35,6 +37,7 @@ export function AppUpdater() {
     } catch (cause) { setError(isAppError(cause) ? cause.message : String(cause)); }
     finally { setPending(false); }
   };
+  if (windows) return <Card title="应用更新" description="Windows 自动更新暂未配置，请使用新的安装包覆盖更新。设置、历史与模型配置会保留。" />;
   const busy = pending || status?.phase === "checking" || status?.phase === "downloading" || status?.phase === "installing";
   return <Card title="应用更新" description="启动时自动检查；安装前验证更新签名。">
     <div className="space-y-3" aria-live="polite">

@@ -85,6 +85,17 @@ context.selectedItems 是本次已固定的用户选区。用户指向选中文�
 图片、音频、视频的格式转换必须使用原生转换计划，不生成 shell 转换或删除脚本。格式：{\"conversion\":{\"kind\":\"image|audio|video\",\"format\":\"目标扩展名\",\"inputRefs\":[\"context.selectedItems 中的 id\"]},\"scripts\":[]}。图片支持 png/jpg/webp，音频支持 mp3/m4a/wav，视频支持 mp4/mov/mkv。\
 conversion.sourceHandling 可省略，宿主会采用 filePreferences.conversionSourceHandling；只有用户本次明确要求保留或删除原文件时，才覆盖为 keep 或 trashAfterSuccess。宿主只在新文件校验成功后移入回收站。";
 
+fn plan_system_prompt() -> String {
+    if cfg!(windows) {
+        format!(
+            "当前系统是 Windows 11，脚本解释器是 Windows PowerShell 5.1。scripts 只能使用该版本支持的 PowerShell 语法；不使用 Unix 路径、sh、bash、&&、Homebrew 或 macOS 命令。路径使用 -LiteralPath；不能假设外部工具已安装。内置转换本轮仅支持 image，不生成音频/视频转换计划。\n{}",
+            PLAN_SYSTEM_PROMPT.replace("应用会准备常用工具，任务 PATH 已包含 Homebrew；", "")
+        )
+    } else {
+        PLAN_SYSTEM_PROMPT.into()
+    }
+}
+
 pub struct PlanningService {
     providers: Arc<ProviderService>,
     models: Arc<dyn ModelGateway>,
@@ -155,7 +166,7 @@ impl PlanningService {
             api_key,
             model,
             timeout_ms: provider.timeout_ms,
-            system: PLAN_SYSTEM_PROMPT.into(),
+            system: plan_system_prompt(),
             user: serde_json::json!({ "request": prompt, "context": context.snapshot, "matchedRules": context.rules, "capabilities": context.capabilities, "filePreferences": { "conversionSourceHandling": settings.conversion_source_handling, "nameConflict": settings.name_conflict } }).to_string(),
         };
 
@@ -228,7 +239,8 @@ impl PlanningService {
                 Err(problem) if attempt == 1 => {
                     // 参数补齐：把问题反馈给模型重试一次。
                     current.system = format!(
-                        "{PLAN_SYSTEM_PROMPT}\n上一次输出不合规：{problem}。请重新只输出符合格式的 JSON。"
+                        "{}\n上一次输出不合规：{problem}。请重新只输出符合格式的 JSON。",
+                        plan_system_prompt()
                     );
                 }
                 Err(_) => {
@@ -390,6 +402,7 @@ fn wire_to_plan(wire: PlanWire, context_id: &str, revision: String) -> Execution
         .scripts
         .into_iter()
         .map(|script| ExecutionStep {
+            script_runtime: Some(fleqi_domain::execution::ScriptRuntime::current()),
             kind: StepKind::Script,
             operation: String::new(),
             executable_ref: None,
@@ -476,8 +489,8 @@ mod tests {
             ..Settings::default()
         };
         let request = |input: &str, handling| ConversionRequest {
-            kind: "video".into(),
-            format: "mov".into(),
+            kind: if cfg!(windows) { "image" } else { "video" }.into(),
+            format: if cfg!(windows) { "jpg" } else { "mov" }.into(),
             input_refs: vec![input.into()],
             source_handling: handling,
         };

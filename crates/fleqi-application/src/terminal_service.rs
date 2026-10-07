@@ -10,7 +10,7 @@ use fleqi_domain::revision::Revision;
 use fleqi_domain::session::EntryRole;
 use fleqi_domain::terminal::TerminalSnapshot;
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::mpsc::{Receiver, Sender, channel};
 use std::sync::{Arc, Mutex};
 
@@ -28,6 +28,8 @@ struct Entry {
     revision: u64,
     /// 消费方已回执的流位置（terminal_ack；流控/诊断用）。
     acked_cursor: u64,
+    /// 目录请求在途时的新输入使其回执不能继续提交等待命令。
+    cd_input: Option<(Revision, bool)>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -126,6 +128,7 @@ impl TerminalService {
                 lease: None,
                 revision: 1,
                 acked_cursor: 0,
+                cd_input: None,
             },
         );
         self.emit_changed(session_id);
@@ -150,14 +153,6 @@ impl TerminalService {
             TerminalEvent::PromptReady { cwd } => {
                 self.with_entry(session_id, |entry, _| {
                     entry.sync.manual_cwd_changed(&cwd);
-                });
-                let _ = self.sessions.set_directories(
-                    session_id,
-                    Some(cwd),
-                    None,
-                    DirectorySync::Synced,
-                );
-                self.with_entry(session_id, |entry, service| {
                     if entry.sync.pending_target().is_some()
                         && entry.sync.state() == DirectorySync::Pending
                     {
@@ -166,11 +161,11 @@ impl TerminalService {
                             .sync
                             .shell_became_safe(&readiness, entry.delivery_visible)
                         {
-                            let _ = entry.handle.send_cd(&PathBuf::from(&target), revision);
+                            let _ = Self::deliver_cd(entry, Path::new(&target), revision);
                         }
                     }
-                    let _ = service;
                 });
+                self.publish_directory_state(session_id);
                 self.emit_changed(session_id);
             }
             TerminalEvent::CdResult {
@@ -188,49 +183,57 @@ impl TerminalService {
                     }
                 };
                 let decision = self
-                    .with_entry(session_id, |entry, _| {
-                        entry.sync.on_cd_result(revision, outcome)
+                    .with_entry(session_id, |entry, service| {
+                        if entry
+                            .cd_input
+                            .is_some_and(|(expected, _)| expected == revision)
+                        {
+                            let (_, interrupted) = entry.cd_input.take().expect("matching cd");
+                            if interrupted && let Some(line) = entry.sync.cancel_queued() {
+                                service
+                                    .withdrawn
+                                    .lock()
+                                    .expect("withdrawn")
+                                    .insert(session_id.to_owned(), line);
+                            }
+                        }
+                        let decision = entry.sync.on_cd_result(revision, outcome);
+                        if let Some(SyncDecision::SyncedAndSend { line, .. }) = &decision {
+                            let _ = entry
+                                .handle
+                                .write_input(format!("{}\r", line.text).as_bytes());
+                        }
+                        decision
                     })
                     .flatten();
                 match decision {
-                    Some(SyncDecision::Synced { .. }) => {
-                        let _ = self.sessions.set_directories(
-                            session_id,
-                            Some(cwd),
-                            None,
-                            DirectorySync::Synced,
-                        );
-                    }
-                    Some(SyncDecision::SyncedAndSend { cwd, line }) => {
-                        let _ = self.with_entry(session_id, |entry, _| {
-                            entry
-                                .handle
-                                .write_input(format!("{}\r", line.text).as_bytes())
-                        });
+                    Some(SyncDecision::SyncedAndSend { line, .. }) => {
                         let _ = self.sessions.append_entry(
                             session_id,
                             EntryRole::ManualCommand,
                             &line.text,
                             None,
                         );
-                        let _ = self.sessions.set_directories(
-                            session_id,
-                            Some(cwd),
-                            None,
-                            DirectorySync::Synced,
-                        );
                     }
-                    Some(SyncDecision::Failed { cwd, message }) => {
-                        let _ = self.sessions.set_directories(
-                            session_id,
-                            Some(cwd),
-                            None,
-                            DirectorySync::Failed,
-                        );
+                    Some(SyncDecision::Failed { message, .. }) => {
                         self.withdrawn(session_id, &line_withdraw_message(&message));
                     }
                     _ => {}
                 }
+                self.publish_directory_state(session_id);
+                self.emit_changed(session_id);
+            }
+            TerminalEvent::CdCancelled { revision } => {
+                self.with_entry(session_id, |entry, _| {
+                    if entry
+                        .cd_input
+                        .is_some_and(|(expected, _)| expected == revision)
+                    {
+                        entry.cd_input = None;
+                    }
+                    entry.sync.on_cd_cancelled(revision);
+                });
+                self.publish_directory_state(session_id);
                 self.emit_changed(session_id);
             }
             TerminalEvent::Preexec | TerminalEvent::EditLine { .. } => {
@@ -257,6 +260,37 @@ impl TerminalService {
             }
             TerminalEvent::Output { .. } => unreachable!(),
         }
+    }
+
+    fn publish_directory_state(&self, session_id: &str) {
+        if let Some((cwd, target, sync)) = self.with_entry(session_id, |entry, _| {
+            (
+                entry.sync.current().to_owned(),
+                entry.sync.pending_target().map(str::to_owned),
+                entry.sync.state(),
+            )
+        }) {
+            let _ = self
+                .sessions
+                .set_directories(session_id, Some(cwd), target, sync);
+        }
+    }
+
+    /// 状态决策与实际投递持有同一会话锁，隐藏或新目标不能插入两者之间。
+    fn deliver_cd(entry: &mut Entry, target: &Path, revision: Revision) -> AppResult<()> {
+        entry.cd_input = Some((revision, false));
+        let result = entry.handle.send_cd(target, revision);
+        if let Err(message) = &result {
+            entry.cd_input = None;
+            entry.sync.on_cd_result(
+                revision,
+                SyncOutcome::Failed {
+                    cwd: entry.handle.current_directory(),
+                    message: message.clone(),
+                },
+            );
+        }
+        result.map_err(AppError::internal)
     }
 
     /// 每个会话至多一个输入租约；控制台与气泡同时查看时未持有租约的面板只读。
@@ -286,6 +320,11 @@ impl TerminalService {
         match (&entry.lease, lease) {
             (Some((held, _)), Some(given)) if held == given => {}
             _ => return Err(AppError::forbidden("终端输入需要当前输入租约")),
+        }
+        if !bytes.is_empty()
+            && let Some((_, interrupted)) = &mut entry.cd_input
+        {
+            *interrupted = true;
         }
         entry.handle.write_input(bytes).map_err(AppError::internal)
     }
@@ -339,6 +378,15 @@ impl TerminalService {
                 Step::OpenTerminal
             } else {
                 let entry = inner.get_mut(session_id).expect("已核对存在");
+                let snapshot = entry.handle.snapshot();
+                if snapshot.shell == "/bin/bash"
+                    && snapshot.shell_readiness
+                        == fleqi_domain::terminal::ShellReadinessState::Unknown
+                {
+                    return Err(AppError::unavailable(
+                        "Bash 集成尚未就绪或已失效，请在终端面板执行命令",
+                    ));
+                }
                 let target = target_native
                     .clone()
                     .unwrap_or_else(|| PathBuf::from(target_display));
@@ -426,17 +474,53 @@ impl TerminalService {
         &self,
         session_id: &str,
         target_native: &std::path::Path,
-        target_display: &str,
+        _target_display: &str,
         revision: Revision,
     ) -> AppResult<()> {
-        let decision = self.with_entry(session_id, |entry, service| {
+        self.change_target(session_id, target_native, revision, false)
+    }
+
+    /// 先校验恢复时的最新目录，再允许执行器继续投递，避免恢复窗口中的旧请求抢跑。
+    pub fn resume_directory(
+        &self,
+        session_id: &str,
+        target: &Path,
+        revision: Revision,
+    ) -> AppResult<()> {
+        self.change_target(session_id, target, revision, true)
+    }
+
+    fn change_target(
+        &self,
+        session_id: &str,
+        target_native: &Path,
+        revision: Revision,
+        resume: bool,
+    ) -> AppResult<()> {
+        let result = self.with_entry(session_id, |entry, service| {
+            if resume {
+                entry.delivery_visible = true;
+            }
+            // 只归一化比较；已经处于同一目录时，不因符号链接或路径拼写重复切换。
+            let target = match (
+                Path::new(entry.sync.current()).canonicalize(),
+                target_native.canonicalize(),
+            ) {
+                (Ok(current), Ok(target)) if current == target => entry.sync.current().to_owned(),
+                _ => target_native.to_string_lossy().into_owned(),
+            };
+            if entry
+                .sync
+                .pending_target()
+                .is_some_and(|previous| previous != target)
+            {
+                entry.handle.cancel_cd();
+            }
             let readiness = entry.handle.readiness();
-            let decision = entry.sync.target_changed(
-                &target_native.to_string_lossy(),
-                revision,
-                &readiness,
-                entry.delivery_visible,
-            );
+            let decision =
+                entry
+                    .sync
+                    .target_changed(&target, revision, &readiness, entry.delivery_visible);
             // 目标变化撤销的等待命令转移到服务级草稿（UI 可取回提示重新提交）。
             if let Some(line) = entry.sync.take_withdrawn_line() {
                 service
@@ -445,45 +529,17 @@ impl TerminalService {
                     .expect("withdrawn")
                     .insert(session_id.to_owned(), line);
             }
-            decision
+            if resume {
+                entry.handle.set_directory_visibility(true, false);
+            }
+            if let SyncDecision::SendCd { target, revision } = decision {
+                Self::deliver_cd(entry, Path::new(&target), revision)
+            } else {
+                Ok(())
+            }
         });
-        match decision {
-            Some(SyncDecision::SendCd { target, revision }) => {
-                let display = target_display.to_owned();
-                let _ = self.sessions.set_directories(
-                    session_id,
-                    None,
-                    Some(display),
-                    DirectorySync::Syncing,
-                );
-                self.with_entry(session_id, |entry, _| {
-                    entry
-                        .handle
-                        .send_cd(&PathBuf::from(target), revision)
-                        .map_err(AppError::internal)
-                })
-                .unwrap_or(Ok(()))
-            }
-            Some(SyncDecision::Pending { target }) => {
-                let _ = self.sessions.set_directories(
-                    session_id,
-                    None,
-                    Some(target),
-                    DirectorySync::Pending,
-                );
-                Ok(())
-            }
-            Some(SyncDecision::Synced { cwd }) => {
-                let _ = self.sessions.set_directories(
-                    session_id,
-                    Some(cwd),
-                    None,
-                    DirectorySync::Synced,
-                );
-                Ok(())
-            }
-            _ => Ok(()),
-        }
+        self.publish_directory_state(session_id);
+        result.unwrap_or(Ok(()))
     }
 
     /// 可见性：`cancel=true`（退到后台/keepAll 隐藏）撤销未投递 cd 与 queuedLine；
@@ -491,6 +547,7 @@ impl TerminalService {
     pub fn set_visibility(&self, session_id: &str, visible: bool, cancel: bool) {
         let withdrawn_line = self
             .with_entry(session_id, |entry, _| {
+                entry.handle.set_directory_visibility(visible, cancel);
                 if !visible && cancel {
                     let withdrawn = entry.sync.went_background();
                     entry.delivery_visible = false;

@@ -33,3 +33,43 @@ jobs:
       - run: cargo fmt --all --check
       - run: cargo test --locked -p fleqi-domain -p fleqi-application
       - run: cargo check --locked -p fleqi-desktop
+
+  linux-native:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.98.0
+        with:
+          components: clippy
+      - run: cargo test --locked -p fleqi-adapters --lib bash_
+      - run: cargo test --locked -p fleqi-platform --test linux_platform
+      - run: cargo test --locked -p fleqi-adapters --test linux_trash
+      - run: cargo clippy --locked -p fleqi-adapters -p fleqi-platform --no-deps -- -D warnings
+
+  windows-native:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 26.8.1
+      - run: npm install --global pnpm@10.33.4
+      - uses: dtolnay/rust-toolchain@1.98.0
+        with:
+          components: rustfmt, clippy
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm check:boundaries
+      - run: pnpm check:contracts
+      - run: pnpm typecheck
+      - run: pnpm --filter @fleqi/ui run test:unit
+      - run: cargo test --locked -p fleqi-domain -p fleqi-application
+      - run: cargo test --locked -p fleqi-platform --test windows_platform
+      - run: cargo test --locked -p fleqi-adapters --test windows_core -- --test-threads=1
+      - run: cargo test --locked -p fleqi-adapters --test name_conflict
+      - run: cargo clippy --locked -p fleqi-desktop --no-deps -- -D warnings
+      - run: pnpm tauri build --bundles nsis
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-x64-nsis
+          path: target/release/bundle/nsis/*.exe
+          if-no-files-found: error

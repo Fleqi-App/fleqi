@@ -537,13 +537,30 @@ fn find(
     Ok(w.report.finish())
 }
 fn reveal(paths: &[PathBuf], cancel: &AtomicBool) -> Result<(), String> {
-    if !cfg!(target_os = "macos") {
-        return Err("Finder 定位仅支持 macOS".into());
+    #[cfg(target_os = "linux")]
+    {
+        let directory = paths
+            .first()
+            .and_then(|path| path.parent())
+            .ok_or("没有可在文件管理器中打开的目录")?;
+        let mut cmd = Command::new("xdg-open");
+        cmd.arg(directory);
+        run_command(cmd, cancel).map(|_| ())
     }
-    let script = "on run argv\nset targets to {}\nrepeat with p in argv\nset end of targets to POSIX file (contents of p) as alias\nend repeat\ntell application \"Finder\"\nreveal targets\nactivate\nend tell\nend run";
-    let mut cmd = Command::new("/usr/bin/osascript");
-    cmd.args(["-e", script, "--"]).args(paths);
-    run_command(cmd, cancel).map(|_| ())
+    #[cfg(target_os = "windows")]
+    {
+        let target = paths.first().ok_or("没有可在资源管理器中打开的路径")?;
+        let mut cmd = Command::new("explorer.exe");
+        cmd.arg(target);
+        run_command(cmd, cancel).map(|_| ())
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let script = "on run argv\nset targets to {}\nrepeat with p in argv\nset end of targets to POSIX file (contents of p) as alias\nend repeat\ntell application \"Finder\"\nreveal targets\nactivate\nend tell\nend run";
+        let mut cmd = Command::new("/usr/bin/osascript");
+        cmd.args(["-e", script, "--"]).args(paths);
+        run_command(cmd, cancel).map(|_| ())
+    }
 }
 fn count_lines(
     sources: &[PathBuf],

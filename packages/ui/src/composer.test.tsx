@@ -1,7 +1,7 @@
 import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
-import type { AppError, AppEvent, RunRecord } from "@fleqi/contracts";
+import type { AppError, AppEvent, QueuedLine, RunRecord } from "@fleqi/contracts";
 import { App } from "./App";
 import { createPreviewAdapter } from "./adapters/host";
 import { parseMode, runConclusion } from "./pages/composer/ComposerShell";
@@ -40,12 +40,43 @@ describe("完成结论归纳（§7 短结论，无摘要时如实归纳）", () 
 });
 
 describe("输入条窗口", () => {
+  it("同步期间的终端输入撤销等待命令后保留草稿并清除排队提示", async () => {
+    const user = userEvent.setup();
+    const adapter = createPreviewAdapter({ delayMs: 0 });
+    await adapter.hotkeyCommit("warm", "CommandOrControl+Shift+F");
+    const surface = await adapter.surfaceShow();
+    const handlers = new Set<(event: AppEvent) => void>();
+    let queued: QueuedLine | null = null;
+    let withdrawn = false;
+    Object.assign(adapter, {
+      subscribe(handler: (event: AppEvent) => void) { handlers.add(handler); return () => { handlers.delete(handler); }; },
+      async terminalSubmitLine(requestId: string, sessionId: string) {
+        queued = { requestId, sessionId, contextRevision: "1", target: "target", text: "echo queued" };
+        return "queued" as const;
+      },
+      async terminalWithdrawnLine() {
+        if (!withdrawn) return null;
+        const line = queued; queued = null; return line;
+      },
+    });
+    go("#/composer");
+    render(<App adapter={adapter} />);
+    await waitFor(() => expect(screen.getByTestId("composer").getAttribute("data-surface")).toBe("visible"));
+    const input = screen.getByTestId("composer-input") as HTMLTextAreaElement;
+    await user.type(input, "!echo queued{Enter}");
+    await waitFor(() => expect(screen.getByTestId("queued-line")).toBeDefined());
+    withdrawn = true;
+    await act(async () => { for (const handler of handlers) handler({ kind: "terminalChanged", sessionId: surface.visibleSessionId!, revision: "2" }); });
+    await waitFor(() => expect(screen.queryByTestId("queued-line")).toBeNull());
+    expect(input.value).toBe("!echo queued");
+    expect(screen.getByTestId("composer-notice").textContent).toContain("等待命令已撤销");
+  });
   it("无热键时显示被拒并提示注册快捷键（FR-ENTRY-003）", async () => {
     go("#/composer");
     render(<App adapter={createPreviewAdapter({ delayMs: 0 })} />);
     await waitFor(() => expect(screen.getByTestId("composer")).toBeDefined());
     expect(screen.getByTestId("composer").getAttribute("data-surface")).toBe("userHidden");
-    expect(screen.getByTestId("composer-surface-notice").textContent).toContain("快捷键");
+    expect((await screen.findByTestId("composer-surface-notice")).textContent).toContain("快捷键");
   });
 
   it("注册热键后显示创建会话；`!` 输入全绿并提交成功（AC-FLOW-009）", async () => {

@@ -6,6 +6,10 @@
 
 ## 本地构建
 
+Windows 11 x64 核心修复包：在 Windows MSVC 工具链下运行 `pnpm.cmd run tauri build --bundles nsis`，产物位于 `target/release/bundle/nsis/`。随后执行 `pnpm.cmd run verify:package`：核对 x64 GUI PE、不含测试驱动，并在独立目录完成安装、覆盖、真实 IPC 启动、退出和卸载。已有 Fleqi 安装或进程时验证脚本拒绝覆盖；使用 `/NS` 避免改动快捷方式，保留应用数据。Tauri 会将安装载荷中的唯一 bundle 标记由 `UNK` 改为 `NSS`，哈希校验只允许这一已知差异，其余字节必须一致。证据为 `tests/.artifacts/package/windows-package-evidence.json`。
+
+Windows 尚未配置代码签名和自动更新频道，本地安装包不代表正式发行；不复用下面的 macOS 更新归档。以下步骤用于 macOS 发布。
+
 1. 完成合同、Rust、UI、原生测试与普通包验证。用户模型凭据、真实文件和本地测试证据不放入 Git 或 release。
 2. 设置 `TAURI_SIGNING_PRIVATE_KEY`（签名私钥文件路径）及 `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`。私钥保存在仓库外，仅用户可读，不写入源码或日志。公钥在 Tauri 配置中，可公开。
 3. `pnpm tauri build --bundles app --config src-tauri/tauri.release.conf.json` 产生应用及签名更新归档；随后运行 `pnpm verify:package`。

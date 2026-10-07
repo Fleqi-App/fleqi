@@ -138,7 +138,7 @@ export function ToolsPage() {
         </Button>
       </div>
       <p className="text-sm text-muted-foreground">
-        已有工具直接使用；缺失工具由官方包管理器补齐。系统工具仍由原包管理器管理，Fleqi 只卸载自己管理的工具包。
+        {host.bootstrap?.buildInfo.targetOs === "windows" ? "检测已安装的系统工具；Windows 扩展工具自动安装暂未开放。" : "已有工具直接使用；缺失工具由官方包管理器补齐。系统工具仍由原包管理器管理，Fleqi 只卸载自己管理的工具包。"}
       </p>
       <ToolPreparation />
       {error && <InlineStatus tone="error">{error}</InlineStatus>}
@@ -159,7 +159,7 @@ export function ToolsPage() {
               actions={
                 <>
                   {statusBadge(entry)}
-                  {(entry.manifest.source.kind === "managed" || entry.status.kind !== "available") &&
+                  {host.bootstrap?.buildInfo.targetOs !== "windows" && (entry.manifest.source.kind === "managed" || entry.status.kind !== "available") &&
                     (entry.installed ? (
                       <Button variant="secondary" aria-label={`卸载 ${entry.manifest.id}`} disabled={busy !== null} onClick={() => void remove(entry)}>
                         <Trash2 aria-hidden="true" />
@@ -186,7 +186,7 @@ export function ToolsPage() {
             >
               <DescriptionList
                 items={[
-                  { label: "来源", value: entry.manifest.source.kind === "system" ? "已有系统工具 / Homebrew 官方仓库" : entry.manifest.source.url, mono: true },
+                  { label: "来源", value: entry.manifest.source.kind === "system" ? host.bootstrap?.buildInfo.targetOs === "windows" ? "已有系统工具" : "已有系统工具 / Homebrew 官方仓库" : entry.manifest.source.url, mono: true },
                   {
                     label: "安装位置",
                     value: entry.status.kind === "available" ? entry.status.path : entry.installed ? entry.installed.installDir : "未安装",

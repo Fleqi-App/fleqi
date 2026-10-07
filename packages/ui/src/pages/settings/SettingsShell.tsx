@@ -8,6 +8,7 @@ import { SegmentedControl } from "../../components/SegmentedControl";
 import { Switch } from "../../components/Switch";
 import { isAppError, newRequestId } from "../../adapters/host";
 import { useHost } from "../../store/host";
+import { fileManagerLabel } from "../../platform-copy";
 import { Card } from "../../components/Card";
 import { AppShell } from "../../components/AppShell";
 import { AboutPage } from "../console/AboutPage";
@@ -20,6 +21,7 @@ import { TasksPage } from "./TasksPage";
 /** M2 通用页：barEnabled/activation/hideBehavior/气泡与建议真实保存（复用外观页的保存流）。 */
 function GeneralPage() {
   const host = useHost();
+  const manager = fileManagerLabel(host.bootstrap?.buildInfo.targetOs);
   const settings = host.bootstrap?.settings;
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<{ field?: string; message: string } | null>(null);
@@ -60,7 +62,7 @@ function GeneralPage() {
           <div className="flex items-start justify-between gap-4">
             <div>
               <label htmlFor="activation">唤起方式</label>
-              <p id="activation-description" className="mt-0.5 text-xs text-muted-foreground">仅手动唤起 / 随 Finder 自动显示（独立于快捷键）。</p>
+              <p id="activation-description" className="mt-0.5 text-xs text-muted-foreground">仅手动唤起 / 随 {manager} 自动显示（独立于快捷键）。</p>
             </div>
             <SegmentedControl
               id="activation"
@@ -69,7 +71,7 @@ function GeneralPage() {
               disabled={busy !== null}
               options={[
                 { value: "manual" as const, label: "仅手动" },
-                { value: "followFinder" as const, label: "随 Finder" },
+                { value: "followFinder" as const, label: `随 ${manager}` },
               ]}
               onChange={(value) => void save("activation", { activation: value })}
             />
@@ -80,7 +82,7 @@ function GeneralPage() {
           <div className="flex items-start justify-between gap-4">
             <div>
               <label htmlFor="hideBehavior">主动隐藏时</label>
-              <p id="hideBehavior-description" className="mt-0.5 text-xs text-muted-foreground">保留全部会话 / 结束全部会话（Finder 移动的临时隐藏不适用）。</p>
+              <p id="hideBehavior-description" className="mt-0.5 text-xs text-muted-foreground">保留全部会话 / 结束全部会话（{manager} 移动的临时隐藏不适用）。</p>
             </div>
             <SegmentedControl
               id="hideBehavior"
