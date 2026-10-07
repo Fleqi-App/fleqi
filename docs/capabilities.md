@@ -55,7 +55,7 @@ application 编排请求与生命周期，catalog 提供能力和参数，planne
 |---|---|
 | DEP-FS | Rust 文件/目录读取、复制、移动、改名、哈希、遍历和基础文本能力；回收站等原生行为由 platform 适配。 |
 | DEP-ZIP | 内置 Rust ZIP 创建、目录、读取与普通 ZIP 解压；明确路径边界及重名行为。 |
-| DEP-IMAGE | PNG/JPG/WebP 解码、编码、尺寸、旋转与质量控制；内置 Rust 图像工具可直接实现。 |
+| DEP-IMAGE | PNG/JPG/WebP 解码、编码、尺寸、旋转与质量控制；内置 Rust 图像工具可直接实现。Apple HEIF/HEIC 在 macOS 经系统 sips 解码，在 Linux 经 libheif 解码，再编码为 PNG/JPG/WebP。 |
 | DEP-IMAGE-EXT | 受管图像处理适配，覆盖裁切、合成、元数据、透明、GIF、ICNS/ICO 等；可组合 Rust 与 ImageMagick 类实现。 |
 | DEP-MEDIA | FFmpeg/ffprobe 类受管适配，提供媒体检查、转码、提轨、裁剪、旋转和裁切。 |
 | DEP-PDF | qpdf 类结构处理适配，提供合并、拆分、提页、旋转、结构压缩和加解密。 |
@@ -114,7 +114,7 @@ application 编排请求与生命周期，catalog 提供能力和参数，planne
 | CAP-ZIP-001 | ZIP 打包；选区、归档名、目标、目录根规则 | 文件/文件夹，单项或多项 | 普通 ZIP，保留约定相对结构 | DEP-ZIP | M；目标可写 | AC-CAP-009：重新解压归档，文件哈希和目录结构对应输入。 |
 | CAP-ZIP-002 | 查看 ZIP 内容；显示路径/大小/条目类型 | 一个 ZIP | 条目列表，无需全量解压 | DEP-ZIP | M；归档可读 | AC-CAP-010：目录、空文件、Unicode 名称全部列出且数目正确。 |
 | CAP-ZIP-003 | 普通 ZIP 解压；目标、重名处理 | 普通未加密 ZIP | 安全目标目录与逐项结果；加密/损坏归档明确反馈 | DEP-ZIP | M；目标可写 | AC-CAP-011：正常包完整解压；越界路径条目不写到目标之外。 |
-| CAP-IMAGE-001 | PNG/JPG/WebP 转换；目标格式、质量、透明背景处理 | PNG/JPG/WebP 单张或多张 | 三格式间六个转换方向；JPG 无透明时背景参数明确 | DEP-IMAGE | M；图像可解码 | AC-CAP-012：逐方向验证格式、尺寸、透明/背景及原件保留。 |
+| CAP-IMAGE-001 | PNG/JPG/WebP 转换；目标格式、质量、透明背景处理。输入可包含 Apple HEIF/HEIC。 | PNG/JPG/WebP，以及 HEIF/HEIC 单张或多张 | PNG/JPG/WebP 互转，HEIF/HEIC 转为这三种格式；JPG 无透明时背景参数明确 | DEP-IMAGE | M；图像可解码。HEIF 在 macOS 使用 sips，在 Linux 使用 libheif | AC-CAP-012：逐方向验证格式、尺寸、透明/背景及原件保留。HEIF 样本转为 PNG 后尺寸与像素一致，原件保留。 |
 | CAP-IMAGE-002 | 缩放/缩略图；宽/高/边界框、比例、是否放大 | PNG/JPG/WebP，扩展格式按适配 | 新图像；按指定约束保持比例或明确拉伸 | DEP-IMAGE、DEP-IMAGE-EXT | M；输入格式有解码器 | AC-CAP-013：固定宽、固定高、边界框及批量结果尺寸正确。 |
 | CAP-IMAGE-003 | 旋转；90/180/270 度、方向 | 图像单张/多张 | 新图像；方向、尺寸、透明度正确 | DEP-IMAGE | M；图像可解码 | AC-CAP-014：非方形带方向标识样本验证各角度结果。 |
 | CAP-IMAGE-004 | JPG 压缩；质量档/数值、元数据策略 | JPG 单张/多张 | 新 JPG；可解码，不保证每张都变小；报告大小变化 | DEP-IMAGE | M；JPG 可解码 | AC-CAP-015：检查质量参数生效、原件保留及不能缩小时的真实说明。 |

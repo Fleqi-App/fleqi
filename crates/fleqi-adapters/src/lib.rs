@@ -9,6 +9,8 @@ pub mod document_operations;
 mod environment;
 pub mod extended;
 pub mod file_operations;
+mod heif;
+pub use heif::is_heif;
 pub mod image_operations;
 pub mod logging;
 pub mod media_operations;

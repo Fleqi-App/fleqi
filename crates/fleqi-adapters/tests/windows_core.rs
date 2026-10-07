@@ -519,3 +519,22 @@ fn windows_recycle_can_be_restored_by_the_system() {
     until(|| source.exists());
     assert_eq!(std::fs::read(&source).unwrap(), b"restorable fixture");
 }
+
+#[test]
+fn native_command_runs_without_a_console_window() {
+    let powershell = std::path::PathBuf::from(std::env::var_os("SystemRoot").unwrap())
+        .join("System32/WindowsPowerShell/v1.0/powershell.exe");
+    let mut command = std::process::Command::new(powershell);
+    command.args([
+        "-NoProfile",
+        "-NonInteractive",
+        "-Command",
+        r#"Add-Type 'using System; using System.Runtime.InteropServices; public static class FleqiConsoleProbe { [DllImport("kernel32.dll")] public static extern IntPtr GetConsoleWindow(); }'; [FleqiConsoleProbe]::GetConsoleWindow().ToInt64()"#,
+    ]);
+    let output = fleqi_adapters::native_steps::run_command(
+        command,
+        &std::sync::atomic::AtomicBool::new(false),
+    )
+    .unwrap();
+    assert_eq!(output.trim(), "0");
+}

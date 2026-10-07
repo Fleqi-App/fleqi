@@ -7,6 +7,7 @@ use crate::process::{ProcessRunner, SpawnRequest};
 use image::{DynamicImage, ImageFormat};
 use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::AtomicBool;
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum CapabilityError {
@@ -531,7 +532,12 @@ impl FileCapabilities {
         Ok(BatchReport::from_items(items))
     }
 
-    // ---------- 图片（CAP-IMAGE-001..004，内置 image crate） ----------
+    // ---------- 图片（CAP-IMAGE-001..004；HEIF/HEIC 先解码再编码） ----------
+
+    fn open_source(source: &Path, cancel: &AtomicBool) -> Result<DynamicImage, CapabilityError> {
+        crate::image_operations::load(source, cancel)
+            .map_err(|error| CapabilityError::Failed(format!("解码失败：{error}")))
+    }
 
     /// 生成测试 PNG（内部测试辅助；不是产品能力）。
     pub fn generate_test_png(
@@ -560,7 +566,14 @@ impl FileCapabilities {
         format: &str,
         quality: u8,
     ) -> Result<PathBuf, CapabilityError> {
-        self.image_convert_with_background(source, directory, format, quality, None)
+        self.image_convert_with_background(
+            source,
+            directory,
+            format,
+            quality,
+            None,
+            &AtomicBool::new(false),
+        )
     }
 
     /// JPEG cannot preserve alpha. The caller must explicitly choose a background.
@@ -571,9 +584,9 @@ impl FileCapabilities {
         format: &str,
         quality: u8,
         background: Option<[u8; 3]>,
+        cancel: &AtomicBool,
     ) -> Result<PathBuf, CapabilityError> {
-        let image =
-            image::open(source).map_err(|e| CapabilityError::Failed(format!("解码失败：{e}")))?;
+        let image = Self::open_source(source, cancel)?;
         let stem = source
             .file_stem()
             .and_then(|s| s.to_str())
@@ -642,8 +655,7 @@ impl FileCapabilities {
         if max_width == 0 || max_height == 0 {
             return Err(CapabilityError::InvalidInput("缩放宽高必须大于零".into()));
         }
-        let image =
-            image::open(source).map_err(|e| CapabilityError::Failed(format!("解码失败：{e}")))?;
+        let image = Self::open_source(source, &AtomicBool::new(false))?;
         let (width, height) = (image.width(), image.height());
         let scale = (max_width as f64 / width as f64).min(max_height as f64 / height as f64);
         let scale = if !allow_upscale {
@@ -678,8 +690,7 @@ impl FileCapabilities {
         directory: &Path,
         degrees: u32,
     ) -> Result<PathBuf, CapabilityError> {
-        let image =
-            image::open(source).map_err(|e| CapabilityError::Failed(format!("解码失败：{e}")))?;
+        let image = Self::open_source(source, &AtomicBool::new(false))?;
         let rotated = match degrees {
             90 => image.rotate90(),
             180 => image.rotate180(),
@@ -703,7 +714,7 @@ impl FileCapabilities {
     }
 
     pub fn image_dimensions(&self, source: &Path) -> Result<(u32, u32), CapabilityError> {
-        let image = image::open(source).map_err(|e| CapabilityError::Failed(e.to_string()))?;
+        let image = Self::open_source(source, &AtomicBool::new(false))?;
         Ok((image.width(), image.height()))
     }
 

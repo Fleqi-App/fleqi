@@ -8,21 +8,62 @@ use std::{
 };
 
 pub fn load(source: &Path, cancel: &AtomicBool) -> Result<DynamicImage, String> {
-    let decoded = (|| -> image::ImageResult<DynamicImage> {
-        let reader = image::ImageReader::open(source)?.with_guessed_format()?;
-        let mut decoder = reader.into_decoder()?;
-        let orientation = decoder.orientation()?;
-        let mut decoded = DynamicImage::from_decoder(decoder)?;
-        decoded.apply_orientation(orientation);
-        Ok(decoded)
-    })();
-    if let Ok(image) = decoded {
-        return Ok(image);
+    if cancel.load(Ordering::Acquire) {
+        return Err("已取消图像解码".into());
     }
-    if cfg!(windows) {
-        return Err("无法解码此图片；Windows 基础图片处理支持 PNG、JPEG 和 WebP".into());
+    let header = read_header(source)?;
+    let decoded = if crate::heif::is_heif(&header) {
+        crate::heif::decode(source, cancel)
+    } else {
+        match decode_with_image_crate(source) {
+            Ok(image) => Ok(image),
+            Err(error) => {
+                #[cfg(target_os = "macos")]
+                {
+                    let _ = error;
+                    decode_with_sips(source, cancel)
+                }
+                #[cfg(not(target_os = "macos"))]
+                {
+                    if cfg!(windows) {
+                        return Err(
+                            "无法解码此图片；Windows 基础图片处理支持 PNG、JPEG 和 WebP".into()
+                        );
+                    }
+                    Err(format!("输入无法解码：{error}"))
+                }
+            }
+        }
+    };
+    if cancel.load(Ordering::Acquire) {
+        return Err("已取消图像解码".into());
     }
-    let temporary = tempfile::tempdir().map_err(|e| e.to_string())?;
+    decoded
+}
+
+fn read_header(source: &Path) -> Result<Vec<u8>, String> {
+    let mut file = std::fs::File::open(source).map_err(|error| format!("无法读取图像：{error}"))?;
+    let mut header = vec![0; 64];
+    use std::io::Read;
+    let count = file
+        .read(&mut header)
+        .map_err(|error| format!("无法读取图像：{error}"))?;
+    header.truncate(count);
+    Ok(header)
+}
+
+pub(crate) fn decode_with_image_crate(source: &Path) -> image::ImageResult<DynamicImage> {
+    let reader = image::ImageReader::open(source)?.with_guessed_format()?;
+    let mut decoder = reader.into_decoder()?;
+    let orientation = decoder.orientation()?;
+    let mut decoded = DynamicImage::from_decoder(decoder)?;
+    decoded.apply_orientation(orientation);
+    Ok(decoded)
+}
+
+#[cfg(target_os = "macos")]
+fn decode_with_sips(source: &Path, cancel: &AtomicBool) -> Result<DynamicImage, String> {
+    let temporary = tempfile::tempdir().map_err(|error| error.to_string())?;
     let converted = temporary.path().join("decoded.png");
     let mut command = std::process::Command::new("/usr/bin/sips");
     command
@@ -31,7 +72,7 @@ pub fn load(source: &Path, cancel: &AtomicBool) -> Result<DynamicImage, String> 
         .arg("--out")
         .arg(&converted);
     run_command(command, cancel)?;
-    image::open(converted).map_err(|e| format!("输入无法解码：{e}"))
+    image::open(converted).map_err(|error| format!("输入无法解码：{error}"))
 }
 fn color(value: &str) -> Result<Rgba<u8>, String> {
     let value = value.strip_prefix('#').unwrap_or(value);
