@@ -884,6 +884,11 @@ pub fn run_command_with_input(
         use std::os::unix::process::CommandExt;
         command.process_group(0);
     }
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        command.creation_flags(windows::Win32::System::Threading::CREATE_NO_WINDOW.0);
+    }
     let mut child = command.spawn().map_err(|e| e.to_string())?;
     let stdout = child.stdout.take().ok_or("stdout 不可用")?;
     let stderr = child.stderr.take().ok_or("stderr 不可用")?;

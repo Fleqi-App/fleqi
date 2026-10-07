@@ -67,3 +67,30 @@ fn apple_heif_converts_to_png_jpeg_and_webp_without_removing_the_original() {
     assert!(jpeg.extension().is_some_and(|ext| ext == "jpg"));
     assert!(webp.extension().is_some_and(|ext| ext == "webp"));
 }
+
+#[test]
+#[cfg_attr(
+    not(any(target_os = "macos", target_os = "linux")),
+    ignore = "需要 PATH 中的 heif-convert；安装后使用 --ignored 执行真实解码验证"
+)]
+fn heif_collection_uses_the_declared_second_primary_and_preserves_readonly_source() {
+    // 两个顶层图像共享原样本数据；pitm=2，第二项有 irot=1，显示为 8×12。
+    let collection = include_bytes!("fixtures/heif-primary-second-rotated.heic");
+    let root = tempfile::tempdir().unwrap();
+    let source = root.path().join("collection.heic");
+    std::fs::write(&source, collection).unwrap();
+    let original_permissions = source.metadata().unwrap().permissions();
+    let mut readonly = original_permissions.clone();
+    readonly.set_readonly(true);
+    std::fs::set_permissions(&source, readonly).unwrap();
+    let target = FileCapabilities
+        .image_convert(&source, root.path(), "png", 90)
+        .unwrap();
+    let image = image::open(target).unwrap().to_rgb8();
+    assert_eq!(image.dimensions(), (8, 12));
+    let red = image.get_pixel(2, 10).0;
+    assert!(red[0] >= 250 && red[1] <= 2 && red[2] <= 2, "{red:?}");
+    assert_eq!(std::fs::read(&source).unwrap(), collection);
+    assert!(source.metadata().unwrap().permissions().readonly());
+    std::fs::set_permissions(source, original_permissions).unwrap();
+}
