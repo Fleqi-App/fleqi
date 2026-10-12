@@ -17,6 +17,7 @@ import { AppearancePage } from "./AppearancePage";
 import { FilesPage } from "./FilesPage";
 import { ModelsPage } from "./ModelsPage";
 import { TasksPage } from "./TasksPage";
+import type { RegisterSettingsLeaveGuard } from "../../router";
 
 /** M2 通用页：barEnabled/activation/hideBehavior/气泡与建议真实保存（复用外观页的保存流）。 */
 function GeneralPage() {
@@ -361,7 +362,7 @@ function normalizeKey(event: KeyboardEvent, allowEscape: boolean): string | null
   return null;
 }
 
-export function SettingsShell({ page, onNavigate, embedded = false }: { page: string; onNavigate: (page: string) => void; embedded?: boolean }) {
+export function SettingsShell({ page, onNavigate, embedded = false, registerLeaveGuard }: { page: string; onNavigate: (page: string) => void; embedded?: boolean; registerLeaveGuard?: RegisterSettingsLeaveGuard }) {
   const host = useHost();
   const settings = host.bootstrap?.settings;
   return (
@@ -392,7 +393,7 @@ export function SettingsShell({ page, onNavigate, embedded = false }: { page: st
           {page === "permissions" && <PermissionsPage />}
           {page === "about" && <AboutPage />}
           {settings && page === "general" && <GeneralPage />}
-          {page === "models" && <ModelsPage />}
+          {page === "models" && <ModelsPage registerLeaveGuard={registerLeaveGuard} />}
           {settings && page === "files" && <FilesPage />}
           {settings && page === "tasks" && <TasksPage />}
     </AppShell>

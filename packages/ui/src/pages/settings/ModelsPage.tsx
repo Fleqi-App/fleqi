@@ -13,6 +13,7 @@ import { useHost } from "../../store/host";
 import { Button as ProviderButton } from "../../components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "../../components/ui/dialog";
 import { ProviderEditor } from "./ProviderEditor";
+import type { RegisterSettingsLeaveGuard, SettingsLeaveGuard } from "../../router";
 
 // UI form starters only: no provider is saved, called or given a key until the user submits.
 const PROVIDER_PRESETS: Array<Pick<ProviderRecord, "id" | "displayName" | "baseUrl"> & { local?: boolean; description: string }> = [
@@ -25,7 +26,7 @@ const PROVIDER_PRESETS: Array<Pick<ProviderRecord, "id" | "displayName" | "baseU
 ];
 
 /** 模型与 API（ui-design.md §9.5）：端点列表 + 编辑器；密钥只写不读（保存后显示"已保存凭据"）。 */
-export function ModelsPage() {
+export function ModelsPage({ registerLeaveGuard }: { registerLeaveGuard?: RegisterSettingsLeaveGuard }) {
   const host = useHost();
   const [providers, setProviders] = useState<ProviderView[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -39,6 +40,8 @@ export function ModelsPage() {
   const [actionBusy, setActionBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const listAttempt = useRef(0);
+  const pendingLeave = useRef<(() => void) | null>(null);
+  const returnFocus = useRef<HTMLElement | null>(null);
   const connect = (preset?: typeof PROVIDER_PRESETS[number]) => {
     setDirty(false); setDiscard(false);
     setEditing(preset ? { id: newRequestId(preset.id), displayName: preset.displayName, baseUrl: preset.baseUrl, models: [], defaultGenerationModel: null, summaryModel: null, timeoutMs: 30000 } : null);
@@ -68,10 +71,30 @@ export function ModelsPage() {
     await reload();
   };
 
-  const closeEditor = () => {
+  const requestLeave = useCallback<SettingsLeaveGuard>((commit) => {
     if (editorBusy) return;
-    if (dirty) { setDiscard(true); return; }
-    setEditorOpen(false); setEditing(null);
+    if (dirty) {
+      if (!pendingLeave.current) returnFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+      pendingLeave.current = commit;
+      setDiscard(true);
+      return;
+    }
+    commit();
+  }, [dirty, editorBusy]);
+  useEffect(() => {
+    registerLeaveGuard?.(editorOpen ? requestLeave : null);
+    return () => registerLeaveGuard?.(null);
+  }, [editorOpen, registerLeaveGuard, requestLeave]);
+  const closeEditor = () => requestLeave(() => { setEditorOpen(false); setEditing(null); });
+  const cancelLeave = () => {
+    pendingLeave.current = null;
+    setDiscard(false);
+  };
+  const discardChanges = () => {
+    const commit = pendingLeave.current;
+    pendingLeave.current = null;
+    setDiscard(false);
+    commit?.();
   };
 
   const remove = async (providerId: string) => {
@@ -160,7 +183,7 @@ export function ModelsPage() {
         }}
         onProbe={(...args) => host.adapter.providerProbe(...args)}
       /></div></DialogContent></Dialog>
-      <Dialog open={discard} onOpenChange={setDiscard}><DialogContent><DialogHeader><DialogTitle>放弃修改？</DialogTitle><DialogDescription>模型连接有未保存的修改。关闭会丢弃这份草稿。</DialogDescription></DialogHeader><div className="flex justify-end gap-2"><Button onClick={() => setDiscard(false)}>继续编辑</Button><Button onClick={() => { setEditorOpen(false); setEditing(null); setDiscard(false); }}>放弃修改</Button></div></DialogContent></Dialog>
+      <Dialog open={discard} onOpenChange={(open) => { if (!open) cancelLeave(); }}><DialogContent onCloseAutoFocus={(event) => { event.preventDefault(); returnFocus.current?.focus(); }}><DialogHeader><DialogTitle>放弃修改？</DialogTitle><DialogDescription>模型连接有未保存的修改。关闭会丢弃这份草稿。</DialogDescription></DialogHeader><div className="flex justify-end gap-2"><Button onClick={cancelLeave}>继续编辑</Button><Button onClick={discardChanges}>放弃修改</Button></div></DialogContent></Dialog>
       <Dialog open={confirm !== null} onOpenChange={(open) => { if (!open && !actionBusy) setConfirm(null); }}><DialogContent showCloseButton={!actionBusy} onInteractOutside={(event) => event.preventDefault()} onEscapeKeyDown={(event) => { if (actionBusy) event.preventDefault(); }}><DialogHeader><DialogTitle>{confirm?.action === "delete" ? "删除连接" : "清除密钥"}</DialogTitle><DialogDescription>{confirm?.action === "delete" ? `删除 ${confirm.view.record.displayName} 及其凭据；使用该连接的默认模型将不可用，需要重新选择。` : `清除 ${confirm?.view.record.displayName} 的凭据，模型配置保留；需要认证的服务将无法调用。`}</DialogDescription></DialogHeader>{actionError && <InlineStatus tone="error">{actionError}</InlineStatus>}<div className="flex justify-end gap-2"><Button disabled={actionBusy} onClick={() => setConfirm(null)}>取消</Button><Button disabled={actionBusy} onClick={() => void confirmAction()}>{actionBusy ? "处理中…" : confirm?.action === "delete" ? "确认删除" : "确认清除"}</Button></div></DialogContent></Dialog>
     </div>
   );

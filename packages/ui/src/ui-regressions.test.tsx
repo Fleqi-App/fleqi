@@ -13,7 +13,146 @@ async function composer() {
   return { adapter, sessionId: surface.visibleSessionId! };
 }
 
+async function modelEditor() {
+  const adapter = createPreviewAdapter({ delayMs: 0 });
+  await adapter.providerSave({ id: "saved", displayName: "测试连接", baseUrl: "https://example.com/v1", models: ["model"], defaultGenerationModel: "model", summaryModel: null, timeoutMs: 5000, apiKey: null });
+  const user = userEvent.setup();
+  const hash = "#/console/about?settings=models";
+  window.location.hash = hash;
+  render(<App adapter={adapter} />);
+  await user.click(await screen.findByTestId("provider-edit-saved"));
+  const editor = screen.getByRole("dialog", { name: "模型连接" });
+  return { adapter, user, hash, editor, name: within(editor).getByLabelText("显示名称") };
+}
+
+async function openWindow(adapter: ReturnType<typeof createPreviewAdapter>, ...args: Parameters<typeof adapter.openWindow>) {
+  await act(async () => {
+    await adapter.openWindow(...args);
+    // JSDOM 的原生 hashchange 延后触发；在 act 内同步导航及弹层焦点副作用。
+    fireEvent(window, new HashChangeEvent("hashchange"));
+  });
+}
+
 describe("UI 宿主链路回归", () => {
+  it("设置参数变化保留手选会话及任务，实际变化的深链仍能定位", async () => {
+    const adapter = createPreviewAdapter({ delayMs: 0 });
+    const first = await adapter.sessionCreate("first");
+    const second = await adapter.sessionCreate("second");
+    const runs: RunRecord[] = [["r1", first.id], ["r2", second.id], ["r3", second.id]].map(([id, sessionId]) => ({
+      id: id!, sessionId: sessionId!, parentRunId: null, plan: null, stepResults: [], directoryDisplay: "", requestId: null, requestFingerprint: "", approvalRequestId: null,
+      origin: "ai", prompt: id!, contextId: "ctx", planRevision: "1", state: "succeeded", policy: "yolo", output: `output-${id}`, exitStatus: 0, createdAt: "now", updatedAt: "now",
+    }));
+    adapter.runList = async (sessionId) => runs.filter((run) => run.sessionId === sessionId);
+    const user = userEvent.setup();
+    window.location.hash = `#/console/runs?session=${first.id}&run=r1`;
+    render(<App adapter={adapter} />);
+    expect((await screen.findByTestId("run-output")).textContent).toBe("output-r1");
+    const filter = screen.getByLabelText("会话") as HTMLSelectElement;
+    await user.selectOptions(filter, second.id);
+    await user.click((await screen.findAllByTestId("run-row"))[1]!);
+    expect(screen.getByTestId("run-output").textContent).toBe("output-r3");
+    await user.click(screen.getByRole("button", { name: "设置" }));
+    const settings = await screen.findByRole("dialog", { name: "设置" });
+    await user.click(within(settings).getByRole("button", { name: "模型与 API" }));
+    await user.click(within(settings).getByRole("button", { name: "关闭" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(filter.value).toBe(second.id);
+    expect(screen.getByTestId("run-output").textContent).toBe("output-r3");
+    act(() => { window.location.hash = `#/console/runs?session=${second.id}`; });
+    await waitFor(() => expect(screen.queryByTestId("run-output")).toBeNull());
+    act(() => { window.location.hash = `#/console/runs?session=${second.id}&run=r2`; });
+    await waitFor(() => expect(screen.getByTestId("run-output").textContent).toBe("output-r2"));
+    act(() => { window.location.hash = "#/console/runs"; });
+    await waitFor(() => expect(window.location.hash).toBe("#/console/runs"));
+    expect(filter.value).toBe(second.id);
+    expect(screen.getByTestId("run-output").textContent).toBe("output-r2");
+    await openWindow(adapter, "settings", "models");
+    await user.click(await screen.findByRole("button", { name: "连接 OpenAI" }));
+    await user.type(screen.getByLabelText("显示名称"), "草稿");
+    act(() => {
+      window.location.hash = `#/console/runs?session=${first.id}&run=r1`;
+      fireEvent(window, new HashChangeEvent("hashchange"));
+    });
+    await screen.findByRole("dialog", { name: "放弃修改？" });
+    await user.click(screen.getByRole("button", { name: "放弃修改" }));
+    await waitFor(() => expect(screen.getByTestId("run-output").textContent).toBe("output-r1"));
+    expect(filter.value).toBe(first.id);
+  });
+
+  it("重复打开设置保留当前分类及模型草稿，未修改的编辑器可直接离开", async () => {
+    const { adapter, user, hash, name } = await modelEditor();
+    await user.type(name, "草稿");
+    await openWindow(adapter, "settings");
+    expect(window.location.hash).toBe(hash);
+    expect((name as HTMLInputElement).value).toBe("测试连接草稿");
+    expect(screen.queryByRole("dialog", { name: "放弃修改？" })).toBeNull();
+    await user.click(screen.getByRole("button", { name: "取消编辑" }));
+    await user.click(screen.getByRole("button", { name: "放弃修改" }));
+    await user.click(screen.getByTestId("provider-edit-saved"));
+    await openWindow(adapter, "settings", "appearance");
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "模型连接" })).toBeNull());
+    expect(window.location.hash).toBe("#/console/about?settings=appearance");
+  });
+
+  it.each(["继续编辑", "Escape", "关闭"])("拒绝离开模型草稿（%s）时恢复路由与焦点", async (action) => {
+    const { adapter, user, hash, name } = await modelEditor();
+    await user.type(name, "草稿");
+    await openWindow(adapter, "settings", "appearance");
+    const discard = await screen.findByRole("dialog", { name: "放弃修改？" });
+    expect(window.location.hash).toBe(hash);
+    if (action === "Escape") await user.keyboard("{Escape}");
+    else await user.click(within(discard).getByRole("button", { name: action }));
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "放弃修改？" })).toBeNull());
+    expect((name as HTMLInputElement).value).toBe("测试连接草稿");
+    await waitFor(() => expect(document.activeElement).toBe(name));
+    await user.click(screen.getByRole("button", { name: "取消编辑" }));
+    await user.click(screen.getByRole("button", { name: "放弃修改" }));
+    expect(window.location.hash).toBe(hash);
+  });
+
+  it("确认离开执行最新导航目标，也保护关闭设置及控制台跳转", async () => {
+    const { adapter, user, hash, name } = await modelEditor();
+    await user.type(name, "草稿");
+    await openWindow(adapter, "settings", "appearance");
+    await screen.findByRole("dialog", { name: "放弃修改？" });
+    await openWindow(adapter, "settings", "general");
+    expect(window.location.hash).toBe(hash);
+    await user.click(screen.getByRole("button", { name: "放弃修改" }));
+    await waitFor(() => expect(window.location.hash).toBe("#/console/about?settings=general"));
+    await openWindow(adapter, "settings", "models");
+    await user.click(await screen.findByTestId("provider-edit-saved"));
+    await user.type(screen.getByLabelText("显示名称"), "草稿");
+    act(() => { window.location.hash = "#/console/about"; });
+    await screen.findByRole("dialog", { name: "放弃修改？" });
+    expect(window.location.hash).toBe(hash);
+    await user.click(screen.getByRole("button", { name: "继续编辑" }));
+    await openWindow(adapter, "console", "library");
+    await screen.findByRole("dialog", { name: "放弃修改？" });
+    expect(window.location.hash).toBe(hash);
+    await user.click(screen.getByRole("button", { name: "放弃修改" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(window.location.hash).toBe("#/console/library");
+  });
+
+  it("保存中拒绝导航且不延迟执行，失败后保留草稿并允许再次确认离开", async () => {
+    const { adapter, user, hash, editor, name } = await modelEditor();
+    await user.type(name, "草稿");
+    let reject!: (reason: unknown) => void;
+    vi.spyOn(adapter, "providerSave").mockImplementation(() => new Promise((_resolve, fail) => { reject = fail; }));
+    await user.click(within(editor).getByRole("button", { name: "保存端点" }));
+    await openWindow(adapter, "settings", "appearance");
+    await waitFor(() => expect(window.location.hash).toBe(hash));
+    expect(screen.queryByRole("dialog", { name: "放弃修改？" })).toBeNull();
+    await act(async () => { reject({ code: "storage", message: "写入失败", retryable: false }); });
+    await within(editor).findByText(/写入失败/);
+    expect(window.location.hash).toBe(hash);
+    expect((name as HTMLInputElement).value).toBe("测试连接草稿");
+    await openWindow(adapter, "settings", "appearance");
+    await screen.findByRole("dialog", { name: "放弃修改？" });
+    await user.click(screen.getByRole("button", { name: "放弃修改" }));
+    await waitFor(() => expect(window.location.hash).toBe("#/console/about?settings=appearance"));
+  });
+
   it("设置在原页面内打开，切换分类与关闭保留路由并恢复焦点", async () => {
     const user = userEvent.setup();
     const adapter = createPreviewAdapter({ delayMs: 0 });

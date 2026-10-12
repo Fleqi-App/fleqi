@@ -281,7 +281,7 @@ export function createPreviewAdapter(options: PreviewOptions = {}): HostAdapter 
     },
     async openWindow(role: WindowRole, page?: string) {
       await wait();
-      window.location.hash = role === "settings" ? settingsHash(window.location.hash, page ?? "appearance") : page ? `#/${role}/${page}` : `#/${role}`;
+      window.location.hash = role === "settings" ? settingsHash(window.location.hash, page) : page ? `#/${role}/${page}` : `#/${role}`;
     },
     async quit() {
       await wait();

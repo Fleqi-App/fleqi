@@ -7,6 +7,7 @@ describe("Windows · 模型/API 管理", () => {
       await browser.switchToWindow(handle);
       if ((await browser.getUrl()).includes("#/console")) break;
     }
+    await $("[data-phase='ready']").waitForExist({ timeout: 30_000 });
     const id = `model-manager-${Date.now()}`;
     const baseUrl = `${process.env.FLEQI_TEST_MODEL_URL}/auth`;
     await browser.execute(async (providerId, url) => {
@@ -39,10 +40,29 @@ describe("Windows · 模型/API 管理", () => {
     }, id) as { summaryModel: { kind: string; model: string } };
     expect(usage.summaryModel.model).toBe(JSON.stringify([id, "windows-fixture-model"]));
 
+    await $(`[data-testid='provider-edit-${id}']`).waitForDisplayed();
     await $(`[data-testid='provider-edit-${id}']`).click();
-    const editor = $("[role='dialog']:has(input[type='password'])");
+    let editor = $("[role='dialog']:has(input[type='password'])");
     await expect(editor).toBeDisplayed();
     expect(await editor.$("input[type='password']").getValue()).toBe("");
+    const name = editor.$("input[placeholder='例如 工作 API / 本地 Ollama']");
+    await name.setValue("模型管理原生回归草稿");
+    await browser.execute(() => window.__TAURI_INTERNALS__.invoke("app_open_window", { role: "settings" }));
+    expect(await browser.getUrl()).toContain("settings=models");
+    await expect(name).toHaveValue("模型管理原生回归草稿");
+    await browser.execute(() => window.__TAURI_INTERNALS__.invoke("app_open_window", { role: "settings", page: "appearance" }));
+    await $("button=继续编辑").waitForDisplayed();
+    expect(await browser.getUrl()).toContain("settings=models");
+    await $("button=继续编辑").click();
+    await expect(name).toHaveValue("模型管理原生回归草稿");
+    await browser.execute(() => window.__TAURI_INTERNALS__.invoke("app_open_window", { role: "settings", page: "appearance" }));
+    await $("button=放弃修改").click();
+    await browser.waitUntil(async () => (await browser.getUrl()).includes("settings=appearance"));
+    await browser.execute(() => window.__TAURI_INTERNALS__.invoke("app_open_window", { role: "settings", page: "models" }));
+    await $(`[data-testid='provider-edit-${id}']`).click();
+    editor = $("[role='dialog']:has(input[type='password'])");
+    await expect(editor).toBeDisplayed();
+    await expect(editor.$("input[placeholder='例如 工作 API / 本地 Ollama']")).toHaveValue("模型管理原生回归");
     await editor.$("button=获取模型").click();
     await expect(editor).toHaveText(expect.stringContaining("获取成功"));
     await expect(editor.$("[data-testid='model-row-manual-only']")).toBeDisplayed();

@@ -53,6 +53,9 @@ describe("哈希路由", () => {
   it("设置导航保留原查询参数，输入条入口进入控制台", () => {
     const original = "#/console/runs?session=s1&run=r1";
     expect(settingsHash(original, "models")).toBe(`${original}&settings=models`);
+    expect(settingsHash(original)).toBe(`${original}&settings=appearance`);
+    expect(settingsHash(`${original}&settings=models`)).toBe(`${original}&settings=models`);
+    expect(settingsHash("#/settings/models")).toBe("#/settings/models");
     expect(settingsHash(settingsHash(original, "models"), null)).toBe(original);
     expect(settingsHash("#/composer", "general")).toBe("#/console/overview?settings=general");
     expect(parseRoute("#/console/about?settings=unknown").settingsPage).toBe("appearance");

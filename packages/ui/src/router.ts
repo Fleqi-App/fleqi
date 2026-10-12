@@ -11,6 +11,9 @@ export interface Route {
   settingsPage?: string;
 }
 
+export type SettingsLeaveGuard = (commit: () => void) => void;
+export type RegisterSettingsLeaveGuard = (guard: SettingsLeaveGuard | null) => void;
+
 export const CONSOLE_DEFAULT: ConsolePage = "overview";
 export const SETTINGS_DEFAULT: SettingsPage = "appearance";
 
@@ -28,7 +31,8 @@ function settingsPage(page: string | undefined): string {
   return page && ["general", "appearance", "models", "permissions", "files", "tasks", "about"].includes(page) ? page : SETTINGS_DEFAULT;
 }
 
-export function settingsHash(hash: string, page: string | null): string {
+export function settingsHash(hash: string, page?: string | null): string {
+  if (page === undefined && parseRoute(hash).settingsPage) return hash;
   const [base, query] = hash.startsWith("#/console") ? hash.split("?") : ["#/console/overview"];
   const params = new URLSearchParams(query);
   if (page === null) params.delete("settings");

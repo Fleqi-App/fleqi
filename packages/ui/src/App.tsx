@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { AlertTriangle, Loader2 } from "lucide-react";
 import { Button } from "./components/Button";
 import { ComposerBar, SessionSelector } from "./pages/composer/ComposerShell";
@@ -6,29 +6,50 @@ import { TaskPanel, type PlanningView } from "./pages/composer/TaskPanel";
 import { TerminalPanel } from "./pages/composer/TerminalPanel";
 import { ConsoleShell } from "./pages/console/ConsoleShell";
 import { SettingsDialog } from "./pages/settings/SettingsDialog";
-import { parseRoute, routeHash, settingsHash, type Route } from "./router";
+import { parseRoute, routeHash, settingsHash, type Route, type SettingsLeaveGuard, type RegisterSettingsLeaveGuard } from "./router";
 import { HostProvider, useHost } from "./store/host";
 import type { HostAdapter } from "./adapters/host";
 import { isAppError, newRequestId } from "./adapters/host";
 import { usePresence } from "./hooks/use-presence";
 
-function useRoute(): [Route, (page: string) => void] {
+function useRoute(): [Route, (page: string) => void, RegisterSettingsLeaveGuard] {
   const [route, setRoute] = useState<Route>(() => parseRoute(window.location.hash));
+  const accepted = useRef({ hash: window.location.hash, route });
+  const leaveGuard = useRef<SettingsLeaveGuard | null>(null);
+  const registerLeaveGuard = useCallback<RegisterSettingsLeaveGuard>((guard) => { leaveGuard.current = guard; }, []);
   useEffect(() => {
-    const onChange = () => setRoute(parseRoute(window.location.hash));
+    const onChange = () => {
+      const hash = window.location.hash;
+      if (hash === accepted.current.hash) return;
+      const next = parseRoute(hash);
+      const previous = accepted.current.route;
+      if (leaveGuard.current && (next.window !== previous.window || next.page !== previous.page || next.settingsPage !== previous.settingsPage)) {
+        history.replaceState(history.state, "", window.location.pathname + window.location.search + accepted.current.hash);
+        leaveGuard.current(() => {
+          history.replaceState(history.state, "", window.location.pathname + window.location.search + hash);
+          accepted.current = { hash, route: next };
+          setRoute(next);
+          // 同页深链消费者也需获知确认后的参数；路由提交本身不依赖该事件。
+          window.dispatchEvent(new HashChangeEvent("hashchange"));
+        });
+        return;
+      }
+      accepted.current = { hash, route: next };
+      setRoute(next);
+    };
     window.addEventListener("hashchange", onChange);
     return () => window.removeEventListener("hashchange", onChange);
   }, []);
   const navigate = (page: string) => {
     window.location.hash = routeHash(route.window, page);
   };
-  return [route, navigate];
+  return [route, navigate, registerLeaveGuard];
 }
 
 /** 加载/失败态不展示旧值为本次成功；失败可重试。 */
 function HostGate() {
   const host = useHost();
-  const [route, navigate] = useRoute();
+  const [route, navigate, registerLeaveGuard] = useRoute();
   if (host.phase === "loading") {
     return (
       <div role="status" aria-live="polite" data-phase="loading" data-window-root="shell" className="flex h-full items-center justify-center gap-2 bg-background text-sm text-muted-foreground">
@@ -58,7 +79,7 @@ function HostGate() {
       ) : (
         <ConsoleShell page={route.page} onNavigate={navigate} />
       )}
-      {route.settingsPage && <SettingsDialog page={route.settingsPage} onNavigate={(page) => { window.location.hash = settingsHash(window.location.hash, page); }} onClose={() => { window.location.hash = settingsHash(window.location.hash, null); }} />}
+      {route.settingsPage && <SettingsDialog page={route.settingsPage} registerLeaveGuard={registerLeaveGuard} onNavigate={(page) => { window.location.hash = settingsHash(window.location.hash, page); }} onClose={() => { window.location.hash = settingsHash(window.location.hash, null); }} />}
     </div>
   );
 }

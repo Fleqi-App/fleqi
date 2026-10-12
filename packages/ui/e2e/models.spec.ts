@@ -29,8 +29,14 @@ test("模型/API：手动配置、获取保留、用途保存、嵌套弹层焦�
   await expect(settings.locator("[data-settings-revision='2']")).toBeVisible();
   await settings.getByRole("button", { name: "编辑端点 OpenAI" }).click();
   await editor.getByLabel("显示名称").fill("OpenAI 工作连接");
-  await page.keyboard.press("Escape");
+  await page.evaluate(() => { window.location.hash = "#/console/about?settings=appearance"; });
   const discard = page.getByRole("dialog", { name: "放弃修改？" });
+  await expect(discard).toBeVisible();
+  await expect(page).toHaveURL(/settings=models$/);
+  await discard.getByRole("button", { name: "继续编辑" }).click();
+  await expect(editor.getByLabel("显示名称")).toBeFocused();
+  await expect(editor.getByLabel("显示名称")).toHaveValue("OpenAI 工作连接");
+  await page.keyboard.press("Escape");
   await expect(discard).toBeVisible();
   await discard.getByRole("button", { name: "继续编辑" }).click();
   await expect(editor.getByLabel("显示名称")).toHaveValue("OpenAI 工作连接");
