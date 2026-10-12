@@ -36,6 +36,7 @@ export function RunsPage() {
   const [planError, setPlanError] = useState<string | null>(null);
   const requestVersion = useRef(0);
   const [conversation, setConversation] = useState<ConversationEntry[]>([]);
+  const routeParams = useRef(new URLSearchParams(window.location.hash.split("?")[1]));
   useEffect(() => {
     let current = true;
     setConversation([]);
@@ -45,8 +46,14 @@ export function RunsPage() {
   useEffect(() => {
     const apply = () => {
       const params = new URLSearchParams(window.location.hash.split("?")[1]);
-      if (params.get("session")) setSessionId(params.get("session")!);
-      if (params.get("run")) setSelected(params.get("run"));
+      const previous = routeParams.current;
+      if (params.get("session") && params.get("session") !== previous.get("session")) {
+        setSessionId(params.get("session")!);
+        setSelected(params.get("run") || null);
+      } else if (params.get("run") && params.get("run") !== previous.get("run")) {
+        setSelected(params.get("run"));
+      }
+      routeParams.current = params;
     };
     window.addEventListener("hashchange", apply);
     return () => window.removeEventListener("hashchange", apply);

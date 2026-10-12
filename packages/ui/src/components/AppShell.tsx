@@ -6,9 +6,9 @@ import { Separator } from "./ui/separator";
 import { Badge } from "./Badge";
 import { useHost } from "../store/host";
 
-export function AppShell({ title, pageLabel, children, fixed = false, ...sidebar }: SidebarProps & { pageLabel: string; children: ReactNode; fixed?: boolean }) {
+export function AppShell({ title, pageLabel, children, fixed = false, embedded = false, ...sidebar }: SidebarProps & { pageLabel: string; children: ReactNode; fixed?: boolean; embedded?: boolean }) {
   const host = useHost();
-  const native = host.adapter.kind === "desktop";
+  const native = host.adapter.kind === "desktop" && !embedded;
   const [open, setOpen] = useState(() => window.innerWidth >= 800);
   useEffect(() => {
     const media = window.matchMedia("(min-width: 800px)");
@@ -16,12 +16,12 @@ export function AppShell({ title, pageLabel, children, fixed = false, ...sidebar
     media.addEventListener("change", resize);
     return () => media.removeEventListener("change", resize);
   }, []);
-  return <SidebarProvider data-settings-revision={host.bootstrap?.settings.revision} open={open} onOpenChange={setOpen} className="app-shell h-full min-h-0 overflow-hidden" style={{ "--sidebar-width": "232px", "--sidebar-width-icon": "80px" } as CSSProperties}>
-    <Sidebar {...sidebar} title={title} />
+  return <SidebarProvider data-settings-revision={host.bootstrap?.settings.revision} open={open} onOpenChange={setOpen} className={`app-shell h-full min-h-0 overflow-hidden ${embedded ? "w-full [&_[data-slot=sidebar-container]]:h-full" : ""}`} style={{ "--sidebar-width": `${sidebar.width ?? 232}px`, "--sidebar-width-icon": "80px" } as CSSProperties}>
+    <Sidebar {...sidebar} title={title} embedded={embedded} />
     <SidebarInset className="min-w-0 overflow-hidden bg-background">
-      <header data-testid={native ? "window-chrome" : undefined} className="app-toolbar relative flex h-12 shrink-0 items-center gap-3 border-b border-border/60 px-4">
+      <header data-testid={native ? "window-chrome" : undefined} className={`app-toolbar relative flex h-12 shrink-0 items-center gap-3 border-b border-border/60 px-4 ${embedded ? "pr-12" : ""}`}>
         {native && <div data-tauri-drag-region data-testid="window-drag-region" aria-hidden="true" className="absolute inset-0" />}
-        <SidebarTrigger className="relative z-10 size-7 text-muted-foreground" aria-label={open ? "收起侧栏" : "展开侧栏"} />
+        {!embedded && <SidebarTrigger className="relative z-10 size-7 text-muted-foreground" aria-label={open ? "收起侧栏" : "展开侧栏"} />}
         <Separator orientation="vertical" className="relative h-4!" />
         <div className="pointer-events-none relative flex items-center gap-2 text-xs text-muted-foreground"><span>{title.replace("Fleqi ", "")}</span><ChevronRight className="size-3" /><span className="text-foreground" data-testid="breadcrumb-page">{pageLabel}</span></div>
         {host.adapter.kind === "preview" && <Badge className="relative ml-auto text-[10px]" tone="warning" data-testid="host-kind" data-host-kind="preview">浏览器预览 · 数据不计原生证据</Badge>}

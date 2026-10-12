@@ -47,48 +47,52 @@ fn build_tray(app: &tauri::App) -> tauri::Result<()> {
         .tooltip("Fleqi")
         .menu(&menu)
         .show_menu_on_left_click(true)
-        .on_menu_event(|app, event| match event.id.as_ref() {
-            "open_composer" => {
-                if updates::is_installing(app) {
-                    return;
-                }
-                // 显式显示：走显示状态机（manual 模式需要已注册快捷键，菜单入口据此引导）。
-                if let Some(state) = app.try_state::<Arc<AppState>>() {
-                    state
-                        .composer_focus_requested
-                        .store(true, Ordering::Release);
-                    let refusal = state.surface.user_show().err();
-                    if let Some(error) = &refusal {
+        .on_menu_event(|app, event| {
+            let app = app.clone();
+            // WebView2 开窗必须离开同步事件回调。
+            tauri::async_runtime::spawn_blocking(move || match event.id.as_ref() {
+                "open_composer" => {
+                    if updates::is_installing(&app) {
+                        return;
+                    }
+                    // 显式显示：走显示状态机（manual 模式需要已注册快捷键，菜单入口据此引导）。
+                    if let Some(state) = app.try_state::<Arc<AppState>>() {
                         state
                             .composer_focus_requested
-                            .store(false, Ordering::Release);
-                        state.logger.log(
-                            "warn",
-                            "surface.show-refused",
-                            &[("message", &error.message)],
-                        );
-                    }
-                    if refusal.is_none() {
-                        // 显式入口抢焦点（用户动作）。
-                        let _ = windows::show_composer_attached(app, true);
-                    } else {
-                        let _ = open_window(app, WindowRole::Settings, None);
+                            .store(true, Ordering::Release);
+                        let refusal = state.surface.user_show().err();
+                        if let Some(error) = &refusal {
+                            state
+                                .composer_focus_requested
+                                .store(false, Ordering::Release);
+                            state.logger.log(
+                                "warn",
+                                "surface.show-refused",
+                                &[("message", &error.message)],
+                            );
+                        }
+                        if refusal.is_none() {
+                            // 显式入口抢焦点（用户动作）。
+                            let _ = windows::show_composer_attached(&app, true);
+                        } else {
+                            let _ = open_window(&app, WindowRole::Settings, None);
+                        }
                     }
                 }
-            }
-            "open_console" => {
-                let _ = open_window(app, WindowRole::Console, None);
-            }
-            "open_settings" => {
-                let _ = open_window(app, WindowRole::Settings, None);
-            }
-            "quit" => {
-                if let Some(state) = app.try_state::<Arc<AppState>>() {
-                    state.begin_shutdown();
+                "open_console" => {
+                    let _ = open_window(&app, WindowRole::Console, None);
                 }
-                app.exit(0);
-            }
-            _ => {}
+                "open_settings" => {
+                    let _ = open_window(&app, WindowRole::Settings, None);
+                }
+                "quit" => {
+                    if let Some(state) = app.try_state::<Arc<AppState>>() {
+                        state.begin_shutdown();
+                    }
+                    app.exit(0);
+                }
+                _ => {}
+            });
         })
         .build(app)?;
     Ok(())
@@ -98,7 +102,10 @@ fn main() {
     let builder = tauri::Builder::default()
         // 单实例先于一切初始化：第二个实例只把已有控制台带到前台。
         .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
-            let _ = open_window(app, WindowRole::Console, None);
+            let app = app.clone();
+            tauri::async_runtime::spawn_blocking(move || {
+                let _ = open_window(&app, WindowRole::Console, None);
+            });
         }))
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_updater::Builder::new().build())

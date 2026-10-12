@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createHostAdapter, PREVIEW_FAILURE } from "./adapters/host";
-import { parseRoute, routeHash } from "./router";
+import { parseRoute, routeHash, settingsHash } from "./router";
 import { applyAppearance, resolveProductTheme, resolveTheme } from "./theme";
 
 function fakeWindow(search: string, withBridge: boolean): Window {
@@ -44,9 +44,20 @@ describe("哈希路由", () => {
   it("解析窗口角色与页面并给默认页", () => {
     expect(parseRoute("")).toEqual({ window: "console", page: "overview" });
     expect(parseRoute("#/console")).toEqual({ window: "console", page: "overview" });
-    expect(parseRoute("#/settings")).toEqual({ window: "settings", page: "appearance" });
-    expect(parseRoute("#/settings/about")).toEqual({ window: "settings", page: "about" });
+    expect(parseRoute("#/settings")).toEqual({ window: "console", page: "overview", settingsPage: "appearance" });
+    expect(parseRoute("#/settings/about")).toEqual({ window: "console", page: "overview", settingsPage: "about" });
+    expect(parseRoute("#/console/runs?session=s1&settings=models")).toEqual({ window: "console", page: "runs", settingsPage: "models" });
     expect(parseRoute("#/unknown/x")).toEqual({ window: "console", page: "overview" });
     expect(routeHash("settings", "general")).toBe("#/settings/general");
+  });
+  it("设置导航保留原查询参数，输入条入口进入控制台", () => {
+    const original = "#/console/runs?session=s1&run=r1";
+    expect(settingsHash(original, "models")).toBe(`${original}&settings=models`);
+    expect(settingsHash(original)).toBe(`${original}&settings=appearance`);
+    expect(settingsHash(`${original}&settings=models`)).toBe(`${original}&settings=models`);
+    expect(settingsHash("#/settings/models")).toBe("#/settings/models");
+    expect(settingsHash(settingsHash(original, "models"), null)).toBe(original);
+    expect(settingsHash("#/composer", "general")).toBe("#/console/overview?settings=general");
+    expect(parseRoute("#/console/about?settings=unknown").settingsPage).toBe("appearance");
   });
 });

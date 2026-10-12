@@ -37,6 +37,12 @@ impl SummaryPort for SummaryService {
             .map_err(|e| e.to_string())?
             .map(|s| s.settings)
             .unwrap_or_default();
+        let explicit_summary = selection.is_some()
+            || settings.default_model.is_some()
+            || matches!(
+                settings.summary_model,
+                fleqi_domain::settings::SummaryModel::Model { .. }
+            );
         let selected = selection
             .map(str::to_owned)
             .or(match settings.summary_model {
@@ -47,11 +53,14 @@ impl SummaryPort for SummaryService {
             .providers
             .runtime_for_selection(selected.as_deref())
             .map_err(|e| e.message)?;
-        let model = provider
-            .default_generation_model
-            .clone()
-            .or_else(|| provider.models.first().cloned())
-            .ok_or("端点未配置摘要模型")?;
+        let model = (if explicit_summary {
+            None
+        } else {
+            provider.summary_model.clone()
+        })
+        .or_else(|| provider.default_generation_model.clone())
+        .or_else(|| provider.models.first().cloned())
+        .ok_or("端点未配置摘要模型")?;
         let request = ModelChatRequest {
             base_url: provider.base_url,
             api_key: key,

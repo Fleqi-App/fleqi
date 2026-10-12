@@ -15,11 +15,23 @@ for (const name of ["A 中文", "B '空格'"]) {
   writeFileSync(path.join(fixtures, name, "two.txt"), "two");
 }
 const server = http.createServer((request, response) => {
-  request.resume();
+  let body = "";
+  request.on("data", (chunk) => { body += chunk; });
   request.on("end", () => {
+    if (request.url?.includes("/auth/") && request.headers.authorization !== "Bearer fixture-key") {
+      response.writeHead(401, { "Content-Type": "application/json" });
+      response.end(JSON.stringify({ error: { message: "fixture authentication failed" } }));
+      return;
+    }
     if (request.url?.endsWith("/models")) {
       response.writeHead(200, { "Content-Type": "application/json" });
       response.end(JSON.stringify({ data: [{ id: "windows-fixture-model" }] }));
+      return;
+    }
+    const payload = JSON.parse(body || "{}");
+    if (payload.stream === false) {
+      response.writeHead(payload.model === "windows-fixture-model" ? 200 : 404, { "Content-Type": "application/json" });
+      response.end(JSON.stringify(payload.model === "windows-fixture-model" ? { choices: [{ message: { content: "OK" } }] } : { error: { message: "model not found" } }));
       return;
     }
     const plan = JSON.stringify({ scripts: ["[IO.File]::WriteAllText((Join-Path $PWD 'ai-result.txt'), 'verified'); Write-Output 'verified'"], effects: ["create"], previewComplete: true });
@@ -42,7 +54,8 @@ try {
   if (!process.argv.includes("--skip-build")) await run(["--filter", "fleqi-desktop", "run", "build:test"]);
   for (const phase of ["initial", "restart"]) {
     env.FLEQI_TEST_PHASE = phase;
-    await run(["--filter", "fleqi-desktop-test", "exec", "wdio", "run", "wdio.windows.conf.ts"]);
+    const specIndex = process.argv.indexOf("--spec");
+    await run(["--filter", "fleqi-desktop-test", "exec", "wdio", "run", "wdio.windows.conf.ts", ...(specIndex < 0 ? [] : process.argv.slice(specIndex, specIndex + 2))]);
   }
 } finally {
   server.close();

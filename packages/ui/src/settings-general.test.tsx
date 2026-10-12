@@ -38,7 +38,7 @@ describe("设置 · 通用（M2 真实保存）", () => {
     expect(await screen.findByText("尚未配置端点")).toBeTruthy();
     await userEvent.setup().click(screen.getByRole("button", { name: "连接 OpenAI" }));
     expect((screen.getByLabelText(/端点地址/) as HTMLInputElement).value).toBe("https://api.openai.com/v1");
-    expect(screen.getByPlaceholderText(/只写不读/)).toBeTruthy();
+    expect((screen.getByLabelText(/API 密钥/) as HTMLInputElement).type).toBe("password");
   });
 
   it("aiPolicy 真实保存（任务与诊断页）", async () => {

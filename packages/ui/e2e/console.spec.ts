@@ -53,12 +53,12 @@ test.describe("M1 设置", () => {
     await page.getByRole("radiogroup", { name: "主题" }).getByRole("radio", { name: "浅色" }).click();
     await expect(page.getByTestId("save-theme")).toHaveAttribute("data-save-state", "saved");
     await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
-    await expect(page.locator("[data-settings-revision=\"1\"]")).toBeVisible();
+    await expect(page.getByRole("dialog").locator("[data-settings-revision=\"1\"]")).toBeVisible();
     await page.getByLabel("透明材质").focus();
     await page.keyboard.press("Space");
     await expect(page.getByTestId("save-transparency")).toHaveAttribute("data-save-state", "saved");
     await expect(page.locator("html")).toHaveAttribute("data-transparency", "off");
-    await expect(page.locator("[data-settings-revision=\"2\"]")).toBeVisible();
+    await expect(page.getByRole("dialog").locator("[data-settings-revision=\"2\"]")).toBeVisible();
     await expect(page).toHaveScreenshot("settings-appearance-light.png");
   });
 
@@ -67,9 +67,9 @@ test.describe("M1 设置", () => {
     await expect(page.getByRole("heading", { name: "通用" })).toBeVisible();
     // 唤起方式真实切换（M2）
     await page.getByRole("radio", { name: "随 Finder" }).click();
-    await expect(page.locator("[data-settings-revision=\"1\"]")).toBeVisible();
+    await expect(page.getByRole("dialog").locator("[data-settings-revision=\"1\"]")).toBeVisible();
     await page.getByRole("radio", { name: "结束全部" }).click();
-    await expect(page.locator("[data-settings-revision=\"2\"]")).toBeVisible();
+    await expect(page.getByRole("dialog").locator("[data-settings-revision=\"2\"]")).toBeVisible();
     await expect(page).toHaveScreenshot("settings-general.png", { mask: [page.getByText(/设置版本/)] });
     // M3：aiPolicy 真实保存 + 上限项以说明呈现
     await page.getByRole("button", { name: "任务与诊断" }).click();
@@ -82,6 +82,30 @@ test.describe("M1 设置", () => {
 });
 
 void maskTime;
+
+test("设置弹层：保留原页面、限制焦点、Esc 关闭，最小窗口内内容可达", async ({ page }) => {
+  for (const viewport of [{ width: 1080, height: 760 }, { width: 640, height: 520 }]) {
+    await page.setViewportSize(viewport);
+    await page.goto("/#/console/about");
+    const settings = page.getByRole("button", { name: "设置", exact: true });
+    await settings.click();
+    const dialog = page.getByRole("dialog", { name: "设置", exact: true });
+    await expect(dialog).toBeVisible();
+    const bounds = (await dialog.boundingBox())!;
+    expect(bounds.x).toBeGreaterThanOrEqual(0);
+    expect(bounds.y).toBeGreaterThanOrEqual(0);
+    expect(bounds.x + bounds.width).toBeLessThanOrEqual(viewport.width);
+    expect(bounds.y + bounds.height).toBeLessThanOrEqual(viewport.height);
+    for (let index = 0; index < 15; index++) {
+      await page.keyboard.press("Tab");
+      expect(await dialog.evaluate((element) => element.contains(document.activeElement))).toBe(true);
+    }
+    await page.keyboard.press("Escape");
+    await expect(dialog).toBeHidden();
+    await expect(page).toHaveURL(/#\/console\/about$/);
+    await expect(settings).toBeFocused();
+  }
+});
 
 test("640px 控制台：侧栏收起、固定看板无横向或纵向滚动", async ({ page }) => {
   await page.setViewportSize({ width: 640, height: 640 });

@@ -474,6 +474,8 @@ pub async fn provider_probe<R: Runtime>(
     base_url: String,
     api_key: Option<String>,
     timeout_ms: Option<u64>,
+    provider_id: Option<String>,
+    model: Option<String>,
 ) -> AppResult<ProviderProbeResult> {
     authorize(&webview)?;
     if base_url.trim().is_empty() {
@@ -481,17 +483,35 @@ pub async fn provider_probe<R: Runtime>(
     }
     fleqi_application::provider_service::ProviderService::validate_base_url(&base_url)
         .map_err(|message| invalid_field("baseUrl", &message))?;
+    let timeout_ms = timeout_ms.unwrap_or(10_000);
+    if !(1_000..=300_000).contains(&timeout_ms) {
+        return Err(invalid_field("timeoutMs", "超时必须在 1000–300000ms 之间"));
+    }
+    if model.as_ref().is_some_and(|model| model.trim().is_empty()) {
+        return Err(invalid_field("model", "模型 ID 不能为空"));
+    }
+    let providers = state.providers.clone();
+    let test_model = model.is_some();
+    let probe = blocking(move || {
+    let api_key = providers.probe_key(provider_id.as_deref(), &base_url, api_key)?;
     let config = fleqi_adapters::model::ProviderConfig {
         id: "probe".into(),
         display_name: "探测".into(),
         base_url,
         api_key,
-        model: "probe".into(),
-        timeout_ms: timeout_ms.unwrap_or(10_000),
+        model: model.unwrap_or_else(|| "probe".into()),
+        timeout_ms,
     };
     let adapter = fleqi_adapters::model::OpenAiCompatibleAdapter::new(config);
-    let _ = state;
-    let probe = blocking(move || <fleqi_adapters::model::OpenAiCompatibleAdapter as fleqi_adapters::model::ModelAdapter>::probe(&adapter)).await?;
+    Ok::<_, AppError>(if test_model {
+        match adapter.test_model() {
+            Ok(()) => fleqi_adapters::model::ProbeOutcome::Ok { models: vec![] },
+            Err(error) => fleqi_adapters::model::ProbeOutcome::Network { message: error.to_string() },
+        }
+    } else {
+        <fleqi_adapters::model::OpenAiCompatibleAdapter as fleqi_adapters::model::ModelAdapter>::probe(&adapter)
+    })
+    }).await??;
     Ok(match probe {
         fleqi_adapters::model::ProbeOutcome::Ok { models } => ProviderProbeResult {
             ok: true,

@@ -150,11 +150,13 @@ export function createDesktopAdapter(): HostAdapter {
     providerList: () => call<ProviderView[]>("provider_list"),
     providerSave: (request) => call<ProviderView>("provider_save", { request }),
     providerDelete: (providerId) => call<void>("provider_delete", { providerId }),
-    providerProbe: (baseUrl, apiKey, timeoutMs) =>
+    providerProbe: (baseUrl, apiKey, timeoutMs, options) =>
       call<{ ok: boolean; models: string[]; error: string | null }>("provider_probe", {
         baseUrl,
         apiKey,
         timeoutMs: timeoutMs ?? null,
+        providerId: options?.providerId ?? null,
+        model: options?.model ?? null,
       }),
     toolsList: () => call<ToolEntry[]>("tools_list"),
     toolsPrepare: () => call("tools_prepare"),

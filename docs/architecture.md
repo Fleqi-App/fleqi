@@ -268,6 +268,8 @@ ProcessRunner 显式设置可执行文件、参数、cwd 与环境，清除会�
 
 ProviderConfig 包含 ID、显示名、protocol、baseUrl、models、默认生成/摘要模型、超时与 credentialRef。密钥录入后只传给 Rust 存入系统凭据服务；普通快照仅返回“已配置/未配置”和掩码。密钥删除、替换和连接测试有真实结果；请求不经过 Fleqi 自营服务。
 
+模型管理（2026-10-12）沿用 ProviderRecord/ProviderSaveRequest 和现有四个 provider IPC，不增加供应商专用协议。`provider_probe` 增加可选 `providerId`、`model`：无 model 时获取 `/models`，有 model 时向 `/chat/completions` 发送最小非流式对话并验证实际正文；配置超时用于两种检查。密钥缺省且有 providerId 时，只向记录中相同的地址复用系统凭据，其他地址须显式提供新密钥或空串；不回传密钥。ProviderService 校验用途必须属于该连接的模型列表，序列化配置及凭据操作；配置写入失败时恢复此前凭据，清除失败不能报告成功。UI 草稿与宿主列表分离，操作序号拦截修改/取消/卸载后的探测回执。摘要服务在未显式指定全局模型时读取连接的 summaryModel，显式选择优先。
+
 模型只能返回结构化计划或文本结果，不拥有 IPC/进程权限。提示词中用户规则、文件上下文、命令输出分区编码；文件内容和输出是数据，不能改写应用执行策略。上下文大小、输出截断和取消由 gateway 处理，完整本地日志不直接全量发送。规则选择在计划前确定并记录命中的规则 ID。
 
 ### 9.2 工具
@@ -307,7 +309,7 @@ SQLite 表组：`settings`、`sessions`、`conversation_entries`、`runs`、`run
 | 能力 | macOS 首版实现 | Windows/Linux 后续适配 |
 |---|---|---|
 | 文件管理器上下文 | Finder Apple Events 获取目录/选择；Accessibility 与窗口事件获取几何/活动状态 | Windows Shell/Explorer；Linux 按桌面/文件管理器逐项报告能力 |
-| 窗口与浮层 | Tauri 窗口 + 封装的 AppKit 能力；输入条、任务浮层、控制台、设置各有角色 | 原生窗口控制、DPI、定位限制分别验收 |
+| 窗口与浮层 | Tauri 窗口 + 封装的 AppKit 能力；输入条与控制台为原生窗口，设置是控制台内的 Dialog，任务浮层绑定输入条 | 原生窗口控制、DPI、定位限制分别验收 |
 | 快捷键 | 系统注册、单键/组合键录制、冲突与权限反馈 | 平台热键适配；系统保留键不得显示假成功 |
 | 终端与进程 | 系统 zsh、PTY、前台进程组与退出回收 | Windows ConPTY、Linux PTY；共享上层状态与接口 |
 | 凭据 | 系统 Keychain，首版不强制跨设备同步 | Credential Manager/Secret Service；不可用时显示能力状态 |
@@ -347,7 +349,9 @@ DTO 位于 application，serde 使用 camelCase，ts-rs 显式导出至 contract
 
 顺序：单实例保护 → 路径与脱敏日志 → 数据库/迁移/设置 → 用例与原生适配 → IPC/菜单/按需窗口 → 无提示异步自检。启动为 starting/ready/degraded/stopping；存储失败可进入 degraded 并打开权限/诊断。首次启动不显示产品输入条，不启动 shell/模型，不自动弹授权窗。
 
-退出进入 stopping，拒绝新变更，停止观察与工作，排空数据库写入并释放资源。原生授权对话框不能可靠撤回；运行代际使迟到结果失效，不无限等待系统调用。关闭控制台/设置只销毁视图与订阅。
+退出进入 stopping，拒绝新变更，停止观察与工作，排空数据库写入并释放资源。原生授权对话框不能可靠撤回；运行代际使迟到结果失效，不无限等待系统调用。关闭控制台只销毁视图与订阅；关闭设置只收起弹层。
+
+2026-10-12：`app_open_window(role="settings", page)` 保留调用合同，但宿主只显示或创建 console；在其当前 `#/console/<page>` 路由的查询参数中写入 `settings=<category>`，保留 session/run 等原参数。UI 将其渲染为设置弹层，分类切换只更新 settings 参数，关闭时仅删除该参数。console 不存在时从 `#/console/overview?settings=<category>` 启动。设置页白名单仍由宿主核对；旧 `#/settings/<category>` 链接在 UI 兼容为概览上的弹层。
 
 | M1 接口组 | 输入与结果 |
 |---|---|

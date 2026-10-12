@@ -17,6 +17,7 @@ import { AppearancePage } from "./AppearancePage";
 import { FilesPage } from "./FilesPage";
 import { ModelsPage } from "./ModelsPage";
 import { TasksPage } from "./TasksPage";
+import type { RegisterSettingsLeaveGuard } from "../../router";
 
 /** M2 通用页：barEnabled/activation/hideBehavior/气泡与建议真实保存（复用外观页的保存流）。 */
 function GeneralPage() {
@@ -361,11 +362,12 @@ function normalizeKey(event: KeyboardEvent, allowEscape: boolean): string | null
   return null;
 }
 
-export function SettingsShell({ page, onNavigate }: { page: string; onNavigate: (page: string) => void }) {
+export function SettingsShell({ page, onNavigate, embedded = false, registerLeaveGuard }: { page: string; onNavigate: (page: string) => void; embedded?: boolean; registerLeaveGuard?: RegisterSettingsLeaveGuard }) {
   const host = useHost();
   const settings = host.bootstrap?.settings;
   return (
     <AppShell
+          embedded={embedded}
           pageLabel={({ general: "通用", appearance: "外观", models: "模型与 API", permissions: "权限与自检", files: "文件与工具", tasks: "任务与诊断", about: "关于与更新" } as Record<string, string>)[page] ?? page}
           title="Fleqi 设置"
           width={200}
@@ -391,7 +393,7 @@ export function SettingsShell({ page, onNavigate }: { page: string; onNavigate: 
           {page === "permissions" && <PermissionsPage />}
           {page === "about" && <AboutPage />}
           {settings && page === "general" && <GeneralPage />}
-          {page === "models" && <ModelsPage />}
+          {page === "models" && <ModelsPage registerLeaveGuard={registerLeaveGuard} />}
           {settings && page === "files" && <FilesPage />}
           {settings && page === "tasks" && <TasksPage />}
     </AppShell>

@@ -129,7 +129,7 @@ export interface HostAdapter {
   providerList(): Promise<ProviderView[]>;
   providerSave(request: ProviderSaveRequest): Promise<ProviderView>;
   providerDelete(providerId: string): Promise<void>;
-  providerProbe(baseUrl: string, apiKey: string | null, timeoutMs?: number): Promise<{ ok: boolean; models: string[]; error: string | null }>;
+  providerProbe(baseUrl: string, apiKey: string | null, timeoutMs?: number, options?: { providerId?: string; model?: string }): Promise<{ ok: boolean; models: string[]; error: string | null }>;
   toolsList(): Promise<ToolEntry[]>;
   toolsPrepare(): Promise<ToolPreparation>;
   toolsPrepareStatus(): Promise<ToolPreparation>;
