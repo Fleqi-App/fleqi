@@ -11,6 +11,9 @@ const HOST_STATE_TEXT = { starting: "启动中", ready: "就绪", degraded: "降
 export function AboutPage() {
   const host = useHost();
   const build = host.bootstrap?.buildInfo;
+  const system = build?.targetOs === "macos" ? `macOS ${build.minimumMacosVersion}+`
+    : build?.targetOs === "windows" ? "Windows"
+    : build?.targetOs === "linux" ? "Linux" : build?.targetOs;
   const [diagnostics, setDiagnostics] = useState<DiagnosticsSnapshot | null>(null);
   const [diagnosticsError, setDiagnosticsError] = useState<string | null>(null);
 
@@ -37,7 +40,7 @@ export function AboutPage() {
           <DescriptionList
             items={[
               { label: "版本", value: build.version, mono: true, field: "version" },
-              { label: "系统", value: `macOS ${build.minimumMacosVersion}+ · ${build.targetArch}` },
+              { label: "系统", value: `${system} · ${build.targetArch}`, field: "system" },
               { label: "许可证", value: "AGPL-3.0-only" },
               { label: "项目", value: "github.com/Fleqi-App/fleqi", mono: true },
             ]}

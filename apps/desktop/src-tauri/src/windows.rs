@@ -158,6 +158,25 @@ fn allowed_pages(role: WindowRole) -> &'static [&'static str] {
 
 /// 已存在则聚焦；否则创建。`page` 在白名单内时直接落到对应页面路由。
 pub fn open_window(app: &AppHandle, role: WindowRole, page: Option<&str>) -> Result<(), String> {
+    if role == WindowRole::Settings {
+        let page = page.unwrap_or("appearance");
+        if !allowed_pages(role).contains(&page) {
+            return Err(format!("设置不支持页面 {page}"));
+        }
+        if let Some(window) = app.get_webview_window("console") {
+            window.show().map_err(|e| e.to_string())?;
+            window.set_focus().map_err(|e| e.to_string())?;
+            return window.eval(format!(
+                "{{ const [base, query] = location.hash.split('?'); const params = new URLSearchParams(query); params.set('settings', {}); location.hash = base + '?' + params; }}",
+                serde_json::to_string(page).map_err(|e| e.to_string())?
+            )).map_err(|e| format!("打开设置失败：{e}"));
+        }
+        return open_window(
+            app,
+            WindowRole::Console,
+            Some(&format!("overview?settings={page}")),
+        );
+    }
     if role != WindowRole::Composer {
         #[cfg(target_os = "macos")]
         let _ = app.set_activation_policy(tauri::ActivationPolicy::Regular);

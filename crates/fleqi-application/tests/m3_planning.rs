@@ -9,6 +9,7 @@ use fleqi_application::ports::{
 };
 use fleqi_application::provider_service::{ProviderSaveRequest, ProviderService};
 use fleqi_application::run_service::RunService;
+use fleqi_application::summary_service::SummaryPort;
 use fleqi_domain::revision::Revision;
 use fleqi_domain::settings::{AiPolicy, Settings};
 use std::collections::{HashMap, VecDeque};
@@ -345,6 +346,54 @@ fn save_provider(providers: &ProviderService, id: &str) {
 
 const VALID_PLAN: &str =
     r#"{"scripts":["printf planned"],"effects":["read"],"previewComplete":true}"#;
+
+#[test]
+fn summary_uses_provider_summary_model_unless_explicitly_selected() {
+    for explicit in [false, true] {
+        let providers = Arc::new(ProviderService::new(
+            Arc::new(MemoryProviders::default()),
+            Arc::new(MemoryCredentials::default()),
+            Arc::new(FakeClock),
+            Arc::new(NoEvents),
+        ));
+        providers
+            .save(ProviderSaveRequest {
+                id: "summary-provider".into(),
+                display_name: "摘要连接".into(),
+                base_url: "https://example.com/v1".into(),
+                models: vec!["generation".into(), "summary".into()],
+                default_generation_model: Some("generation".into()),
+                summary_model: Some("summary".into()),
+                timeout_ms: 5000,
+                api_key: None,
+            })
+            .unwrap();
+        let gateway = FakeGateway::with(vec![Ok("摘要正文".into())]);
+        let settings = Settings {
+            default_model: None,
+            summary_model: if explicit {
+                fleqi_domain::settings::SummaryModel::Model {
+                    model: serde_json::json!(["summary-provider", "generation"]).to_string(),
+                }
+            } else {
+                fleqi_domain::settings::SummaryModel::Default
+            },
+            ..Settings::default()
+        };
+        let summary = fleqi_application::summary_service::SummaryService {
+            providers,
+            models: gateway.clone(),
+            settings: Arc::new(MemorySettings(Mutex::new(Some(settings)))),
+        };
+        summary
+            .summarize("测试正文", "中文", 100, None, &AtomicBool::new(false))
+            .unwrap();
+        assert_eq!(
+            gateway.requests.lock().unwrap()[0].model,
+            if explicit { "generation" } else { "summary" }
+        );
+    }
+}
 
 #[test]
 fn no_provider_reports_guidance() {

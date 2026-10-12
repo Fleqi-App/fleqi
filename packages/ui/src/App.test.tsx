@@ -65,7 +65,7 @@ describe("控制台", () => {
     await waitFor(() => expect(screen.getByTestId("provider-status").textContent).toContain("未配置"));
     // 唤起一步的前往打开设置窗口通用页（预览里体现为 hash 导航）。
     await user.click(screen.getByTestId("activation-status").closest("button")!);
-    await waitFor(() => expect(window.location.hash).toBe("#/settings/general"));
+    await waitFor(() => expect(window.location.hash).toBe("#/console/overview?settings=general"));
   });
 
   it("概览首次配置：注册热键与配置端点后徽章变为已配置", async () => {
@@ -120,6 +120,7 @@ describe("设置 · 模型与 API", () => {
     await waitFor(() => expect(screen.getByText("已保存凭据")).toBeTruthy());
     // 清除密钥：凭据徽章消失，端点记录仍在。
     await user.click(screen.getByTestId("provider-clear-secret-local"));
+    await user.click(screen.getByRole("button", { name: "确认清除" }));
     await waitFor(() => expect(screen.getByText("无凭据")).toBeTruthy());
     expect(screen.getByText("本地端点")).toBeTruthy();
     expect(screen.queryByTestId("provider-clear-secret-local")).toBeNull();

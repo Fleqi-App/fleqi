@@ -14,6 +14,41 @@ async function composer() {
 }
 
 describe("UI 宿主链路回归", () => {
+  it("设置在原页面内打开，切换分类与关闭保留路由并恢复焦点", async () => {
+    const user = userEvent.setup();
+    const adapter = createPreviewAdapter({ delayMs: 0 });
+    window.location.hash = "#/console/runs?session=s1&run=r1";
+    render(<App adapter={adapter} />);
+    const settings = await screen.findByRole("button", { name: "设置" });
+    await user.click(settings);
+    const dialog = await screen.findByRole("dialog", { name: "设置" });
+    expect(window.location.hash).toBe("#/console/runs?session=s1&run=r1&settings=appearance");
+    await user.click(within(dialog).getByRole("button", { name: "模型与 API" }));
+    await within(dialog).findByRole("heading", { name: "模型与 API" });
+    await user.click(within(dialog).getByRole("button", { name: "关闭" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(window.location.hash).toBe("#/console/runs?session=s1&run=r1");
+    await waitFor(() => expect(document.activeElement).toBe(settings));
+    await user.click(settings);
+    await screen.findByRole("dialog", { name: "设置" });
+    await user.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  });
+
+  it.each([
+    ["windows", "Windows"],
+    ["linux", "Linux"],
+    ["macos", "macOS 14.0+"],
+  ])("关于页按实际构建系统展示名称（%s）", async (targetOs, label) => {
+    const adapter = createPreviewAdapter({ delayMs: 0 });
+    const boot = await adapter.bootstrap();
+    adapter.bootstrap = async () => ({ ...boot, buildInfo: { ...boot.buildInfo, targetOs, minimumMacosVersion: "14.0" } });
+    window.location.hash = "#/console/about";
+    render(<App adapter={adapter} />);
+    await screen.findByRole("heading", { name: "关于与更新" });
+    expect(document.querySelector('[data-field="system"]')?.textContent).toBe(`${label} · ${boot.buildInfo.targetArch}`);
+  });
+
   it.each(["ready", "unknown"] as const)("Bash 终端按集成状态显示自动同步提示（%s）", async (readiness) => {
     const user = userEvent.setup();
     const { adapter } = await composer();

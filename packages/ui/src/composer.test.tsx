@@ -114,7 +114,7 @@ describe("输入条窗口", () => {
     expect(action.getAttribute("data-action")).toBe("settings-models");
     expect(action.textContent).toContain("配置模型 API");
     await user.click(action);
-    await waitFor(() => expect(window.location.hash).toBe("#/settings/models"));
+    await waitFor(() => expect(window.location.hash).toBe("#/console/overview?settings=models"));
   });
 
   it("配置端点后 AI 提交走规划；等待确认给通知，完成结果经 runChanged 上气泡（§7）", async () => {

@@ -10,16 +10,16 @@ export interface SidebarProps {
   onSelect: (id: string) => void; footer?: ReactNode; width?: number;
 }
 
-export function Sidebar({ title, groups, bottom, current, onSelect, footer }: SidebarProps) {
+export function Sidebar({ title, groups, bottom, current, onSelect, footer, embedded = false }: SidebarProps & { embedded?: boolean }) {
   const items = (group: NavGroup) => <SidebarMenu>{group.items.map((item) => <SidebarMenuItem key={item.id}>
-    <SidebarMenuButton isActive={current === item.id} disabled={!!item.unavailable} tooltip={item.unavailable ?? item.label} aria-label={item.label} aria-current={current === item.id ? "page" : undefined} onClick={() => onSelect(item.id)} className="h-9 gap-3 px-3 text-[13px]" data-active={current === item.id}>
+    <SidebarMenuButton isActive={current === item.id} disabled={!!item.unavailable} tooltip={embedded ? undefined : item.unavailable ?? item.label} aria-label={item.label} aria-current={current === item.id ? "page" : undefined} onClick={() => onSelect(item.id)} className="h-9 gap-3 px-3 text-[13px]" data-active={current === item.id}>
       <item.icon className="size-4" aria-hidden="true" /><span>{item.label}</span>
     </SidebarMenuButton>
   </SidebarMenuItem>)}</SidebarMenu>;
-  return <SidebarRoot collapsible="icon" aria-label={title} className="app-sidebar border-r-0">
-    <div className="native-titlebar-space h-12 shrink-0" aria-hidden="true" />
+  return <SidebarRoot collapsible={embedded ? "none" : "icon"} aria-label={title} className="app-sidebar border-r-0">
+    {!embedded && <div className="native-titlebar-space h-12 shrink-0" aria-hidden="true" />}
     <SidebarHeader className="px-3 pb-5 pt-1">
-      <SidebarMenu><SidebarMenuItem><SidebarMenuButton size="lg" tooltip={title} onClick={() => onSelect(groups[0]?.items[0]?.id ?? current)} className="h-11 gap-3 px-2">
+      <SidebarMenu><SidebarMenuItem><SidebarMenuButton size="lg" tooltip={embedded ? undefined : title} onClick={() => onSelect(groups[0]?.items[0]?.id ?? current)} className="h-11 gap-3 px-2">
         <img src={fleqiIcon} alt="Fleqi" width={32} height={32} className="size-8 shrink-0 rounded-lg" />
         <span className="text-sm font-semibold tracking-tight">Fleqi</span>
       </SidebarMenuButton></SidebarMenuItem></SidebarMenu>

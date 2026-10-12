@@ -19,8 +19,8 @@ async function switchToWindowWithHash(fragment: string): Promise<string> {
   return target!;
 }
 
-describe("M1.6 · 多窗口设置：真实保存、跨窗口一致、版本冲突与幂等", () => {
-  it("控制台打开设置窗口；外观修改真实保存并同步到控制台窗口", async () => {
+describe("M1.6 · 主窗口设置：真实保存、版本冲突与幂等", () => {
+  it("控制台打开设置弹层；外观修改真实保存并同步到原页面", async () => {
     await $("[data-phase='ready']").waitForExist({ timeout: 30_000 });
     // 与 01 共享同一宿主进程：先回到概览页。
     await $("button[data-sidebar='menu-button']*=概览").click();
@@ -28,16 +28,11 @@ describe("M1.6 · 多窗口设置：真实保存、跨窗口一致、版本冲�
     const consoleHandle = await browser.getWindowHandle();
     await $("button[data-sidebar='menu-button']*=设置").click();
 
-    const settingsHandle = await switchToWindowWithHash("#/settings");
-    expect(settingsHandle).not.toBe(consoleHandle);
+    const settingsHandle = await switchToWindowWithHash("#/console");
+    expect(settingsHandle).toBe(consoleHandle);
     await $("[data-phase='ready']").waitForExist({ timeout: 30_000 });
-    expect(await $("[data-phase='ready']").getAttribute("data-window-role")).toBe("settings");
-    // 再次点击控制台的"设置"：已存在的窗口走 show+focus 分支，把被遮挡的设置窗口带到前台
-    //（被完全遮挡的 WKWebView 会暂停渲染，截图证据需要窗口可见）。
-    await browser.switchToWindow(consoleHandle);
-    await $("button[data-sidebar='menu-button']*=设置").click();
-    await browser.switchToWindow(settingsHandle);
-    await browser.pause(300);
+    expect(await $("[data-phase='ready']").getAttribute("data-window-role")).toBe("console");
+    await $("[role='dialog']").waitForDisplayed();
     await $("#theme button[data-value='light']").waitForExist();
     await $("#theme button[data-value='light']").click();
     await browser.waitUntil(async () => (await $("[data-testid='save-theme']").getAttribute("data-save-state")) === "saved", {
@@ -65,7 +60,9 @@ describe("M1.6 · 多窗口设置：真实保存、跨窗口一致、版本冲�
     // 以真实效果（版本号与主题）判定，不依赖最后一个事件名。
     await browser.saveScreenshot(evidencePath("m1-settings-appearance-saved.png"));
 
-    // 跨窗口一致：控制台窗口收到 settings.changed 后重拉快照并应用主题。
+    // 关闭弹层后原控制台页面仍显示已经提交的设置版本和主题。
+    await $("[data-slot='dialog-close']").click();
+    await $("[role='dialog']").waitForDisplayed({ reverse: true });
     await browser.switchToWindow(consoleHandle);
     await browser.waitUntil(async () => (await $("[data-field='settings-revision']").getText()) === "1", {
       timeout: 15_000,
@@ -73,7 +70,8 @@ describe("M1.6 · 多窗口设置：真实保存、跨窗口一致、版本冲�
     });
     expect(await $("html").getAttribute("data-theme")).toBe("light");
     await browser.saveScreenshot(evidencePath("m1-console-after-theme-change.png"));
-    await browser.switchToWindow(settingsHandle);
+    await $("button[data-sidebar='menu-button']*=设置").click();
+    await $("[role='dialog']").waitForDisplayed();
   });
 
   it("透明材质保存 → 版本 2；过期 expectedRevision 返回 conflict 且携带当前版本", async () => {

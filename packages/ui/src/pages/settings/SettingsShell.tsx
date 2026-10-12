@@ -361,11 +361,12 @@ function normalizeKey(event: KeyboardEvent, allowEscape: boolean): string | null
   return null;
 }
 
-export function SettingsShell({ page, onNavigate }: { page: string; onNavigate: (page: string) => void }) {
+export function SettingsShell({ page, onNavigate, embedded = false }: { page: string; onNavigate: (page: string) => void; embedded?: boolean }) {
   const host = useHost();
   const settings = host.bootstrap?.settings;
   return (
     <AppShell
+          embedded={embedded}
           pageLabel={({ general: "通用", appearance: "外观", models: "模型与 API", permissions: "权限与自检", files: "文件与工具", tasks: "任务与诊断", about: "关于与更新" } as Record<string, string>)[page] ?? page}
           title="Fleqi 设置"
           width={200}

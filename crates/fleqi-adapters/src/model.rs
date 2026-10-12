@@ -94,6 +94,41 @@ impl OpenAiCompatibleAdapter {
             .unwrap_or_default();
         Self { config, client }
     }
+
+    /// 用最小对话验证所选模型；获取 /models 成功不等于模型可调用。
+    pub fn test_model(&self) -> Result<(), ModelError> {
+        let mut request = self.client.post(self.config.endpoint("/chat/completions")).json(&serde_json::json!({
+            "model": self.config.model, "messages": [{"role": "user", "content": "Reply with OK."}], "stream": false,
+        }));
+        if let Some(key) = &self.config.api_key {
+            request = request.bearer_auth(key);
+        }
+        let response = request.send().map_err(|error| ModelError::Network {
+            message: error.to_string(),
+        })?;
+        let status = response.status();
+        if !status.is_success() {
+            // 服务可能回显请求头，错误反馈不得带回用户密钥。
+            let mut body = response.text().unwrap_or_default();
+            if let Some(key) = self.config.api_key.as_ref().filter(|key| !key.is_empty()) {
+                body = body.replace(key, "[REDACTED]");
+            }
+            return Err(classify_status(status, &body, &self.config.model));
+        }
+        let payload: serde_json::Value =
+            response.json().map_err(|_| ModelError::InvalidResponse {
+                message: "服务未返回有效 JSON".into(),
+            })?;
+        if payload["choices"][0]["message"]["content"]
+            .as_str()
+            .is_none_or(|text| text.trim().is_empty())
+        {
+            return Err(ModelError::InvalidResponse {
+                message: "所选模型未返回对话正文".into(),
+            });
+        }
+        Ok(())
+    }
 }
 
 impl ModelAdapter for OpenAiCompatibleAdapter {
@@ -178,15 +213,19 @@ impl ModelAdapter for OpenAiCompatibleAdapter {
                 }
                 match response.json::<serde_json::Value>() {
                     Ok(payload) => {
-                        let models = payload["data"]
-                            .as_array()
-                            .map(|items| {
-                                items
-                                    .iter()
-                                    .filter_map(|item| item["id"].as_str().map(String::from))
-                                    .collect()
-                            })
-                            .unwrap_or_default();
+                        let Some(items) = payload["data"].as_array() else {
+                            return ProbeOutcome::Network {
+                                message: "模型列表格式无效；可手动填写模型 ID 后测试".into(),
+                            };
+                        };
+                        let mut models: Vec<String> = items
+                            .iter()
+                            .filter_map(|item| item["id"].as_str())
+                            .filter(|id| !id.trim().is_empty())
+                            .map(String::from)
+                            .collect();
+                        models.sort();
+                        models.dedup();
                         ProbeOutcome::Ok { models }
                     }
                     Err(error) => ProbeOutcome::Network {

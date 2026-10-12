@@ -64,15 +64,15 @@ describe("M4 · AC-FLOW 矩阵（真实 IPC + 真实设置 UI）", () => {
 
   it("AC-FLOW-004：endAll（经真实设置 UI）主动隐藏结束全部", async () => {
     await switchToWindowWithHash("#/console");
-    await $("button[data-sidebar='menu-button']*=设置").click();
-    await switchToWindowWithHash("#/settings");
+    await browser.execute(() => window.__TAURI_INTERNALS__.invoke("app_open_window", { role: "settings", page: "general" }));
+    await $("[role='dialog']").waitForDisplayed();
     await $("[data-phase='ready']").waitForExist({ timeout: 20_000 });
     // run-a 的 spec 文件为并行 worker：设置窗口可能被 02 号 spec 同时导航走。
     // 点击后未见“已保存”则回通用页重试（最多 3 次）；endAll 是否真正生效由下方
     // surface_hide 后的会话终态断言把关，不依赖此处的保存回执作唯一证据。
     let saved = false;
     for (let attempt = 0; attempt < 3 && !saved; attempt += 1) {
-      await $("button[data-sidebar='menu-button']*=通用").click();
+      await $("[role='dialog'] button[data-sidebar='menu-button']*=通用").click();
       const endAllRadio = $("button*=结束全部");
       await endAllRadio.waitForExist({ timeout: 10_000 });
       await endAllRadio.click();
@@ -81,6 +81,7 @@ describe("M4 · AC-FLOW 矩阵（真实 IPC + 真实设置 UI）", () => {
         .then(() => true, () => false);
     }
     await browser.waitUntil(async () => (await $("span*=已保存").isExisting()), { timeout: 15_000 });
+    await $("[data-slot='dialog-close']").click();
     await switchToWindowWithHash("#/console");
     const summary = (await browser.execute(async () => {
       const bridge = window.__TAURI_INTERNALS__;
@@ -204,12 +205,14 @@ describe("M4 · AC-FLOW 矩阵（真实 IPC + 真实设置 UI）", () => {
   });
 
   it("AC-FLOW-007/008：Run 上下文独立；yolo（经真实设置 UI）下未知效果免确认", async () => {
-    await switchToWindowWithHash("#/settings");
-    await $("button[data-sidebar='menu-button']*=任务与诊断").click();
+    await switchToWindowWithHash("#/console");
+    await browser.execute(() => window.__TAURI_INTERNALS__.invoke("app_open_window", { role: "settings", page: "tasks" }));
+    await $("[role='dialog']").waitForDisplayed();
     const yoloRadio = $("button*=全部免确认");
     await yoloRadio.waitForExist({ timeout: 10_000 });
     await yoloRadio.click();
     await browser.waitUntil(async () => (await $("span*=已保存").isExisting()), { timeout: 15_000 });
+    await $("[data-slot='dialog-close']").click();
     await switchToWindowWithHash("#/console");
     const summary = (await browser.execute(async () => {
       const bridge = window.__TAURI_INTERNALS__;

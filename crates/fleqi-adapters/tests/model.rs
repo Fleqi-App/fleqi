@@ -21,7 +21,6 @@ fn spawn_server(
 ) -> MockServer {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let port = listener.local_addr().unwrap().port();
-    std::fs::write("/tmp/fleqi-model-mock-port", port.to_string()).unwrap();
     std::thread::spawn(move || {
         // 每个连接处理一个请求：按 Content-Length 读完 body 后应答并半关连接。
         for stream in listener.incoming() {
@@ -166,6 +165,59 @@ fn probe_lists_models_without_account() {
     assert!(
         matches!(outcome, ProbeOutcome::Ok { ref models } if models.len() == 2),
         "{outcome:?}"
+    );
+}
+
+#[test]
+fn probe_rejects_wrong_payload_and_deduplicates_models() {
+    for (body, expected) in [
+        (
+            "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\r\n{\"error\":\"wrong endpoint\"}",
+            None,
+        ),
+        (
+            "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\r\n{\"data\":[{\"id\":\"m\"},{\"id\":\"m\"},{\"id\":\"\"}]}",
+            Some(vec!["m".to_owned()]),
+        ),
+    ] {
+        let requests = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let server = spawn_server(body, requests);
+        let result = OpenAiCompatibleAdapter::new(provider(&server.base_url)).probe();
+        match expected {
+            None => assert!(matches!(result, ProbeOutcome::Network { .. })),
+            Some(expected) => assert_eq!(result, ProbeOutcome::Ok { models: expected }),
+        }
+    }
+}
+
+#[test]
+fn model_test_calls_chat_and_checks_real_response_without_echoing_secret() {
+    let requests = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let server = spawn_server(
+        "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\r\n{\"choices\":[{\"message\":{\"content\":\"OK\"}}]}",
+        requests.clone(),
+    );
+    OpenAiCompatibleAdapter::new(provider(&server.base_url))
+        .test_model()
+        .unwrap();
+    let recorded = requests.lock().unwrap().join("\n");
+    assert!(recorded.contains("POST /chat/completions"));
+    assert!(recorded.contains("\"stream\":false"));
+    assert!(recorded.contains("\"model\":\"test-model\""));
+    let server = spawn_server(
+        "HTTP/1.1 401 Unauthorized\r\nContent-Type: application/json\r\n\r\n{\"error\":\"test-key\"}",
+        Arc::new(std::sync::Mutex::new(Vec::new())),
+    );
+    let error = OpenAiCompatibleAdapter::new(provider(&server.base_url))
+        .test_model()
+        .unwrap_err();
+    assert!(matches!(error, ModelError::AuthFailed { .. }));
+    assert!(!error.to_string().contains("test-key"));
+    let server = spawn_server(PROBE_OK, Arc::new(std::sync::Mutex::new(Vec::new())));
+    assert!(
+        OpenAiCompatibleAdapter::new(provider(&server.base_url))
+            .test_model()
+            .is_err()
     );
 }
 

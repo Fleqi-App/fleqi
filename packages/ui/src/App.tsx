@@ -5,8 +5,8 @@ import { ComposerBar, SessionSelector } from "./pages/composer/ComposerShell";
 import { TaskPanel, type PlanningView } from "./pages/composer/TaskPanel";
 import { TerminalPanel } from "./pages/composer/TerminalPanel";
 import { ConsoleShell } from "./pages/console/ConsoleShell";
-import { SettingsShell } from "./pages/settings/SettingsShell";
-import { parseRoute, routeHash, type Route } from "./router";
+import { SettingsDialog } from "./pages/settings/SettingsDialog";
+import { parseRoute, routeHash, settingsHash, type Route } from "./router";
 import { HostProvider, useHost } from "./store/host";
 import type { HostAdapter } from "./adapters/host";
 import { isAppError, newRequestId } from "./adapters/host";
@@ -53,13 +53,12 @@ function HostGate() {
   }
   return (
     <div data-phase="ready" data-window-role={route.window} data-window-root={route.window} data-attempt={host.attempt} data-last-event={host.lastEvent ?? ""} className="h-full">
-      {route.window === "settings" ? (
-        <SettingsShell page={route.page} onNavigate={navigate} />
-      ) : route.window === "composer" ? (
+      {route.window === "composer" ? (
         <ComposerWindow />
       ) : (
         <ConsoleShell page={route.page} onNavigate={navigate} />
       )}
+      {route.settingsPage && <SettingsDialog page={route.settingsPage} onNavigate={(page) => { window.location.hash = settingsHash(window.location.hash, page); }} onClose={() => { window.location.hash = settingsHash(window.location.hash, null); }} />}
     </div>
   );
 }

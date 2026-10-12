@@ -16,6 +16,7 @@ import type {
   TerminalSnapshot,
 } from "@fleqi/contracts";
 import type { HostAdapter, SessionList, SurfaceView, TerminalStreamEvent, WindowRole, CatalogEntry } from "./types";
+import { settingsHash } from "../../router";
 
 /**
  * 浏览器预览适配器：固定数据 + 内存状态机，持续标识为预览；不代表原生证据。
@@ -75,6 +76,7 @@ const EDITABLE_FIELDS = new Set([
   "inlineSuggestionsLimit",
   "aiPolicy",
   "defaultModel",
+  "summaryModel",
   "nameConflict",
   "conversionSourceHandling",
   "outputLocation",
@@ -147,7 +149,7 @@ export function createPreviewAdapter(options: PreviewOptions = {}): HostAdapter 
   const bootstrap = (): AppBootstrap => ({
     buildInfo: { ...PREVIEW_BUILD_INFO },
     hostState: degraded ? "degraded" : "ready",
-    windowRole: window.location.hash.startsWith("#/settings") ? "settings" : "console",
+    windowRole: window.location.hash.startsWith("#/composer") ? "composer" : "console",
     storage: {
       state: degraded ? "degraded" : "ready",
       dataDirDisplay: "~/Library/Application Support/app.fleqi.desktop（预览）",
@@ -279,7 +281,7 @@ export function createPreviewAdapter(options: PreviewOptions = {}): HostAdapter 
     },
     async openWindow(role: WindowRole, page?: string) {
       await wait();
-      window.location.hash = page ? `#/${role}/${page}` : `#/${role}`;
+      window.location.hash = role === "settings" ? settingsHash(window.location.hash, page ?? "appearance") : page ? `#/${role}/${page}` : `#/${role}`;
     },
     async quit() {
       await wait();
@@ -653,10 +655,10 @@ export function createPreviewAdapter(options: PreviewOptions = {}): HostAdapter 
       await wait();
       m3.providers = m3.providers.filter((p) => p.record.id !== providerId);
     },
-    async providerProbe(baseUrl: string): Promise<{ ok: boolean; models: string[]; error: string | null }> {
+    async providerProbe(baseUrl: string, _apiKey: string | null, _timeoutMs?: number, options?: { providerId?: string; model?: string }): Promise<{ ok: boolean; models: string[]; error: string | null }> {
       await wait();
       if (!baseUrl.includes("127.0.0.1")) {
-        return { ok: true, models: ["preview-mini", "preview-pro"], error: null };
+        return { ok: true, models: options?.model ? [] : ["preview-mini", "preview-pro"], error: null };
       }
       return { ok: false, models: [], error: "预览：本地端点未运行" };
     },

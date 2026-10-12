@@ -26,7 +26,8 @@ describe("Dock、同名文件与输入条尺寸", () => {
     const policy = () => Number(execFileSync(probe, [String(pid)], { encoding: "utf8" }).trim());
     expect(policy()).toBe(0);
     await browser.execute(() => window.__TAURI_INTERNALS__.invoke("app_open_window", { role: "settings", page: "files" }));
-    await switchRole("settings");
+    await switchRole("console");
+    await $("[role='dialog']").waitForDisplayed();
     await $("button=替换已有文件").click();
     await browser.waitUntil(async () => browser.execute(async () => (await window.__TAURI_INTERNALS__.invoke("app_bootstrap") as { settings: { nameConflict: string } }).settings.nameConflict === "overwrite"));
     expect(await $("body").getText()).not.toContain("unknown variant");
@@ -76,8 +77,8 @@ describe("Dock、同名文件与输入条尺寸", () => {
       expect(Math.abs(current.bottom - initial.bottom)).toBeLessThanOrEqual(1);
       bursts.push(current);
     }
-    await switchRole("settings");
-    await browser.closeWindow();
+    await switchRole("console");
+    await $("[data-slot='dialog-close']").click();
     expect(policy()).toBe(0); // console is still open
     await switchRole("console");
     await browser.closeWindow();

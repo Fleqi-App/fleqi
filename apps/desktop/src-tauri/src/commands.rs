@@ -93,7 +93,8 @@ pub fn diagnostics_get<R: Runtime>(
 }
 
 #[tauri::command]
-pub fn app_open_window<R: Runtime>(
+// Windows WebView2 不能在同步 IPC 中创建窗口，否则会阻塞事件线程。
+pub async fn app_open_window<R: Runtime>(
     webview: Webview<R>,
     app: AppHandle,
     role: String,
